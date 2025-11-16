@@ -1,2 +1,2 @@
 # CarTracker
-Car GPS/GSM tracker on Arduino with a Google Maps dashboard
+Car GPS/GSM tracker based on ESP32 with a Google Maps dashboard
