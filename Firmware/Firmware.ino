@@ -6,6 +6,15 @@
 SoftwareSerial shieldSerial(PIN_RX, PIN_TX);
 DFRobot_SIM7070G SIM7070G(&shieldSerial);
 
+// Log messages in UART in format - [Firmware] [LEVEL] - message
+void logMessage(const char* level, const char* message)
+{
+    Serial.print("[Firmware] [");
+    Serial.print(level);
+    Serial.print("] - ");
+    Serial.println(message);
+}
+
 void setup() 
 {
     delay(10000);
@@ -16,14 +25,14 @@ void setup()
     // software UART communication between Arduino and SIM7070G shield 
     shieldSerial.begin(19200);
     
-    Serial.println("Turning ON SIM7070G...");
+    logMessage("INFO", "Turning ON SIM7070G...");
     if (SIM7070G.turnON())
     {
-        Serial.println("SIM7070G turned ON");
+        logMessage("INFO", "SIM7070G turned ON");
     }
     else
     {
-        Serial.println("Connot turn ON SIM7070G");
+        logMessage("ERROR", "Cannot turn ON SIM7070G");
     }
 
 }
