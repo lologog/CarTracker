@@ -101,5 +101,17 @@ void setup()
 
 void loop() 
 {
+    // Get device position
+    logMessage("INFO", "Getting device position...");
+    if (SIM7070G.getPosition())
+    {
+        logMessage("INFO", String("Latitude: ") + SIM7070G.getLatitude());
+        logMessage("INFO", String("Longitude: ") + SIM7070G.getLongitude());
+    }
+    else
+    {
+        logMessage("ERROR", "Failed to get device position");
+    }
 
+    delay(1000);
 }
