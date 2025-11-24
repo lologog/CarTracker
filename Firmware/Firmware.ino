@@ -18,16 +18,9 @@ void logMessage(const char* level, T message)
     Serial.println(message);
 }
 
-void setup() 
+// Turn ON the shield, set up shield software UART, check SIM card and initialize GNSS positioning
+void initSIM7070G()
 {
-    delay(10000);
-
-    // hardware UART communication with serial monitor
-    Serial.begin(HARD_UART_BAUDRATE);
-
-    // software UART communication between Arduino and SIM7070G shield 
-    shieldSerial.begin(SOFT_UART_BAUDRATE);
-    
     // Turn ON SIM7070G
     logMessage("INFO", "Turning ON SIM7070G...");
     if (SIM7070G.turnON())
@@ -71,6 +64,19 @@ void setup()
     {
         logMessage("ERROR", "Failed to initialize GNSS positioning");
     }
+}
+
+void setup() 
+{
+    delay(10000);
+
+    // hardware UART communication with serial monitor
+    Serial.begin(HARD_UART_BAUDRATE);
+
+    // software UART communication between Arduino and SIM7070G shield 
+    shieldSerial.begin(SOFT_UART_BAUDRATE);
+
+    initSIM7070G();
 }
 
 void loop() 
