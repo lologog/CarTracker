@@ -49,6 +49,18 @@ void setup()
     {
         logMessage("ERROR", "Failed to set baud rate");
     }
+
+    // Check if the SIM card is working properly
+    logMessage("INFO", "Checking SIM card...");
+    if (SIM7070G.checkSIMStatus())
+    {
+        logMessage("INFO", "SIM card OK");
+    }
+    else
+    {
+        logMessage("ERROR", "SIM card check failed");
+    }
+
 }
 
 void loop() 
