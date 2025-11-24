@@ -1,3 +1,8 @@
+/*
+* Author: Krzysztof Tomicki
+* Year: 2025
+*/
+
 #include <DFRobot_SIM7070G.h>
 
 #define PIN_TX 7
