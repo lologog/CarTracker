@@ -61,6 +61,16 @@ void setup()
         logMessage("ERROR", "SIM card check failed");
     }
 
+    // Initialize GNSS positioning
+    logMessage("INFO", "Initializing GNSS positioning...");
+    if (SIM7070G.initPos())
+    {
+        logMessage("INFO", "GNSS positioning initialized");
+    }
+    else
+    {
+        logMessage("ERROR", "Failed to initialize GNSS positioning");
+    }
 }
 
 void loop() 
