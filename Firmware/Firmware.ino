@@ -38,6 +38,17 @@ void setup()
     {
         logMessage("ERROR", "Cannot turn ON SIM7070G");
     }
+
+    // Set baud rate on software UART
+    logMessage("INFO", "Setting software UART baud rate...");
+    if (SIM7070G.setBaudRate(SOFT_UART_BAUDRATE))
+    {
+        logMessage("INFO", String("Set baud rate: ") + SOFT_UART_BAUDRATE);
+    }
+    else
+    {
+        logMessage("ERROR", "Failed to set baud rate");
+    }
 }
 
 void loop() 
