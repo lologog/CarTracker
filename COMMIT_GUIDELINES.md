@@ -36,6 +36,12 @@ We use a three-level branching model:
 3. When finished, merge feature -> dev
 4. When full functionality of the project is ready, merge dev -> main
 
+## Merge Rules
+- All merges MUST use --no-ff
+- Use Git's default merge commit message
+- Prepend the module name in brackets [..]
+    - Example: [Firmware] Merge branch 'feature-error_logging' into dev
+
 # Versioning with Tags
 We use Git tags to mark stable released versions
 
