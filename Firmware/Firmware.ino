@@ -23,23 +23,29 @@ void logMessage(const char* level, T message)
     Serial.println(message);
 }
 
+// Send AT command to the modem and print response to Serial Monitor
 void sendAT(const char* cmd)
 {
-  Serial.print(">> ");
-  Serial.println(cmd);
+    // Print command to Serial Monitor
+    Serial.print(">> ");
+    Serial.println(cmd);
 
-  shieldSerial.print(cmd);
-  shieldSerial.print("\r\n");
+    // Send AT command to SIM7070G via software serial
+    shieldSerial.print(cmd);
+    shieldSerial.print("\r\n");
 
-  unsigned long t = millis();
-  while (millis() - t < 3000) {   // czekamy max 3 s
-    while (shieldSerial.available()) {
-      char c = shieldSerial.read();
-      Serial.write(c);
+    // Read modem response for up to 3 seconds
+    unsigned long t = millis();
+    while (millis() - t < 3000) 
+    {
+        while (shieldSerial.available()) 
+        {
+            char c = shieldSerial.read();
+            Serial.write(c);
+        }
     }
-  }
 
-  Serial.println("\n----");
+    Serial.println("\n----");
 }
 
 // Turn ON the shield, set up shield software UART, check SIM card and initialize GNSS positioning
@@ -120,19 +126,18 @@ void setup()
     // software UART communication between Arduino and SIM7070G shield 
     shieldSerial.begin(SOFT_UART_BAUDRATE);
 
+    sendAT("AT+CNMP=38"); // Network mode preference: 38 = LTE only
+    sendAT("AT+CFUN=1,1"); // Full modem restart
+
+    delay(30000); // Wait for modem to reboot and initialize
+
+    sendAT("AT+CEREG?"); // LTE registration status (0,1 = registered)
+    sendAT("AT+CGATT?"); // Packet service attach status (internet access)
+    sendAT("AT+CGDCONT=1,\"IP\",\"internet\""); // Define PDP context (APN configuration)
+    sendAT("AT+CGACT=1,1"); // Activate PDP context (start data connection)
+    sendAT("AT+CPSI?"); // Current radio connection status (RAT, band, signal)
+
     initSIM7070G();
-
-    // 
-    sendAT("AT+CNMP=38"); // Preferowany typ sieci - 38 = LTE only
-    sendAT("AT+CFUN=1,1"); // Pelny restart modemu
-
-    delay(30000); // Czekamy, aby modem zdazyl sie zresetowac
-
-    sendAT("AT+CEREG?"); // Stan rejestracji w sieci LTE - 0,1 = zarejestrowany
-    sendAT("AT+CGATT?"); // Czy modem ma prawo uzywac internetu
-    sendAT("AT+CGDCONT=1,\"IP\",\"internet\""); // Kontekst PDP - jakiego internetu uzyc
-    sendAT("AT+CGACT=1,1"); // Aktywacja kontekstu PDP - polaczenie z internetem
-    sendAT("AT+CPSI?"); // Aktualny stan polaczenia z informacjami
 }
 
 void loop() 
