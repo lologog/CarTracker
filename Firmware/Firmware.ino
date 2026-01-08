@@ -23,6 +23,25 @@ void logMessage(const char* level, T message)
     Serial.println(message);
 }
 
+void sendAT(const char* cmd)
+{
+  Serial.print(">> ");
+  Serial.println(cmd);
+
+  shieldSerial.print(cmd);
+  shieldSerial.print("\r\n");
+
+  unsigned long t = millis();
+  while (millis() - t < 3000) {   // czekamy max 3 s
+    while (shieldSerial.available()) {
+      char c = shieldSerial.read();
+      Serial.write(c);
+    }
+  }
+
+  Serial.println("\n----");
+}
+
 // Turn ON the shield, set up shield software UART, check SIM card and initialize GNSS positioning
 void initSIM7070G()
 {
@@ -102,6 +121,18 @@ void setup()
     shieldSerial.begin(SOFT_UART_BAUDRATE);
 
     initSIM7070G();
+
+    // 
+    sendAT("AT+CNMP=38"); // Preferowany typ sieci - 38 = LTE only
+    sendAT("AT+CFUN=1,1"); // Pelny restart modemu
+
+    delay(30000); // Czekamy, aby modem zdazyl sie zresetowac
+
+    sendAT("AT+CEREG?"); // Stan rejestracji w sieci LTE - 0,1 = zarejestrowany
+    sendAT("AT+CGATT?"); // Czy modem ma prawo uzywac internetu
+    sendAT("AT+CGDCONT=1,\"IP\",\"internet\""); // Kontekst PDP - jakiego internetu uzyc
+    sendAT("AT+CGACT=1,1"); // Aktywacja kontekstu PDP - polaczenie z internetem
+    sendAT("AT+CPSI?"); // Aktualny stan polaczenia z informacjami
 }
 
 void loop() 
