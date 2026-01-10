@@ -48,7 +48,7 @@ void sendAT(const char* cmd)
     Serial.println("\n----");
 }
 
-// Turn ON the shield, set up shield software UART, check SIM card and initialize GNSS positioning
+// Turn ON the shield, set up shield software UART and check SIM card
 void initSIM7070G()
 {
     // Turn ON SIM7070G
@@ -112,15 +112,17 @@ void setup()
 
     initSIM7070G();
 
-    sendAT("AT+CNMP=38"); // Network mode preference: 38 = LTE only
+    sendAT("AT+CNMP=51"); // Network mode preference: 38 = LTE-M only
     sendAT("AT+CFUN=1,1"); // Full modem restart
 
-    delay(30000); // Wait for modem to reboot and initialize
+    delay(60000); // Wait for modem to reboot and initialize
 
     sendAT("AT+CEREG?"); // LTE registration status (0,1 = registered)
     sendAT("AT+CGATT?"); // Packet service attach status (internet access)
-    sendAT("AT+CGDCONT=1,\"IP\",\"internet\""); // Define PDP context (APN configuration)
-    sendAT("AT+CGACT=1,1"); // Activate PDP context (start data connection)
+    sendAT("AT+CNCFG=0,1,\"internet\""); // Configure PDP context 0 (APN and IP type) for LTE-M
+    sendAT("AT+CNACT=0,1"); // Activate PDP context 0 and establish data connection
+    delay(3000); // Wait to make sure that the PDP context is set
+    sendAT("AT+CNACT?"); // Query PDP context status and assigned IP address
     sendAT("AT+CPSI?"); // Current radio connection status (RAT, band, signal)
 
     // Initialize GNSS positioning
