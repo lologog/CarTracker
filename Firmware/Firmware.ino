@@ -98,6 +98,30 @@ void initSIM7070G()
             delay(1000);
         }
     }
+}
+
+void setup() 
+{
+    delay(10000);
+
+    // hardware UART communication with serial monitor
+    Serial.begin(HARD_UART_BAUDRATE);
+
+    // software UART communication between Arduino and SIM7070G shield 
+    shieldSerial.begin(SOFT_UART_BAUDRATE);
+
+    initSIM7070G();
+
+    sendAT("AT+CNMP=38"); // Network mode preference: 38 = LTE only
+    sendAT("AT+CFUN=1,1"); // Full modem restart
+
+    delay(30000); // Wait for modem to reboot and initialize
+
+    sendAT("AT+CEREG?"); // LTE registration status (0,1 = registered)
+    sendAT("AT+CGATT?"); // Packet service attach status (internet access)
+    sendAT("AT+CGDCONT=1,\"IP\",\"internet\""); // Define PDP context (APN configuration)
+    sendAT("AT+CGACT=1,1"); // Activate PDP context (start data connection)
+    sendAT("AT+CPSI?"); // Current radio connection status (RAT, band, signal)
 
     // Initialize GNSS positioning
     while (1)
@@ -114,30 +138,6 @@ void initSIM7070G()
             delay(1000);
         }
     }
-}
-
-void setup() 
-{
-    delay(10000);
-
-    // hardware UART communication with serial monitor
-    Serial.begin(HARD_UART_BAUDRATE);
-
-    // software UART communication between Arduino and SIM7070G shield 
-    shieldSerial.begin(SOFT_UART_BAUDRATE);
-
-    sendAT("AT+CNMP=38"); // Network mode preference: 38 = LTE only
-    sendAT("AT+CFUN=1,1"); // Full modem restart
-
-    delay(30000); // Wait for modem to reboot and initialize
-
-    sendAT("AT+CEREG?"); // LTE registration status (0,1 = registered)
-    sendAT("AT+CGATT?"); // Packet service attach status (internet access)
-    sendAT("AT+CGDCONT=1,\"IP\",\"internet\""); // Define PDP context (APN configuration)
-    sendAT("AT+CGACT=1,1"); // Activate PDP context (start data connection)
-    sendAT("AT+CPSI?"); // Current radio connection status (RAT, band, signal)
-
-    initSIM7070G();
 }
 
 void loop() 
