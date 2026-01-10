@@ -1,0 +1,12 @@
+#server data
+dane.csv
+.env
+
+### --- Python --- ###
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+build/
+dist/
