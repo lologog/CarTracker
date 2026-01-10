@@ -125,6 +125,18 @@ void setup()
     sendAT("AT+CNACT?"); // Query PDP context status and assigned IP address
     sendAT("AT+CPSI?"); // Current radio connection status (RAT, band, signal)
 
+    sendAT("AT+SHCONF=?");
+    sendAT("AT+SHCONF=\"URL\",\"http://httpbin.org\"");
+    sendAT("AT+SHCONF=\"BODYLEN\",1024");
+    sendAT("AT+SHCONF=\"HEADERLEN\",350");
+    sendAT("AT+SHCONN");
+    delay(3000);
+    sendAT("AT+SHSTATE?");
+    sendAT("AT+SHREQ=\"/get\",1");
+    delay(3000);
+    sendAT("AT+SHREAD=0,384");
+    sendAT("AT+SHDISC");
+
     // Initialize GNSS positioning
     while (1)
     {
