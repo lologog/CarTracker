@@ -1,6 +1,7 @@
 #server data
 dane.csv
 .env
+old.*
 
 ### --- Python --- ###
 __pycache__/
