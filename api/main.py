@@ -29,7 +29,7 @@ class ConnectionManager:
             try:
                 await connection.send_json(message)
             except:
-                pass # Obsługa zerwanych połączeń
+                pass 
 
 security_basic=HTTPBasic()
 manager = ConnectionManager()
@@ -90,7 +90,6 @@ def get_last_location():
 async def read_root(request: Request, user: str = Depends(get_current_user)):
     return templates.TemplateResponse("index.html", {"request": request})
 
-# Endpoint API zwracający dane w formacie JSON
 @app.get("/location")
 async def api_location():
     return get_last_location()
@@ -121,7 +120,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            await asyncio.sleep(10) # Utrzymuj połączenie przy życiu
-            await websocket.receive_text() # Czekaj na sygnał (opcjonalne)
+            await asyncio.sleep(10) 
+            await websocket.receive_text() 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
