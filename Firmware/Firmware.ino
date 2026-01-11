@@ -13,6 +13,8 @@
 SoftwareSerial shieldSerial(PIN_RX, PIN_TX);
 DFRobot_SIM7070G SIM7070G(&shieldSerial);
 
+int lastHttpLen = -1;
+
 // Log messages in UART in format - [Firmware] [LEVEL] - message
 template<typename T>
 void logMessage(const char* level, T message)
@@ -100,6 +102,57 @@ void initSIM7070G()
     }
 }
 
+// HTTP post and wait for response due to catch +SHREQ response body size
+int httpPostAndWait(const char* path, unsigned long timeoutMs = 20000)
+{
+    // Clear RX buffer to avoid parsing old data
+    while (shieldSerial.available()) shieldSerial.read();
+
+    // Send HTTP POST request (method=3)
+    shieldSerial.print("AT+SHREQ=\"");
+    shieldSerial.print(path);
+    shieldSerial.print("\",3\r\n");
+
+    String line = "";
+    unsigned long start = millis();
+
+    // Wait for the response from the server - max timeout 20 sec
+    while (millis() - start < timeoutMs)
+    {
+        while (shieldSerial.available())
+        {
+            // Read one letter
+            char c = shieldSerial.read();
+            Serial.write(c);
+
+            // Whole line read
+            if (c == '\n')
+            {
+                // Remove white signs
+                line.trim();
+
+                // Search for response +SHREQ response after POST
+                if (line.startsWith("+SHREQ:"))
+                {
+                    // Take body length given by the response (+SHREQ: "POST",200,449 <-- length)
+                    int lastComma = line.lastIndexOf(',');
+                    if (lastComma > 0)
+                    {
+                        int len = line.substring(lastComma + 1).toInt();
+                        return len;
+                    }
+                }
+                line = "";
+            }
+            else
+            {
+                line += c;
+            }
+        }
+    }
+    return -1;
+}
+
 void setup() 
 {
     delay(10000);
@@ -110,7 +163,7 @@ void setup()
     // software UART communication between Arduino and SIM7070G shield 
     shieldSerial.begin(SOFT_UART_BAUDRATE);
 
-    initSIM7070G();
+    //initSIM7070G();
 
     sendAT("AT+CNMP=51"); // Network mode preference: 38 = LTE-M only
     sendAT("AT+CFUN=1,1"); // Full modem restart
@@ -121,20 +174,85 @@ void setup()
     sendAT("AT+CGATT?"); // Packet service attach status (internet access)
     sendAT("AT+CNCFG=0,1,\"internet\""); // Configure PDP context 0 (APN and IP type) for LTE-M
     sendAT("AT+CNACT=0,1"); // Activate PDP context 0 and establish data connection
-    delay(3000); // Wait to make sure that the PDP context is set
+    delay(3000); // Allow time to obtain IP address
     sendAT("AT+CNACT?"); // Query PDP context status and assigned IP address
     sendAT("AT+CPSI?"); // Current radio connection status (RAT, band, signal)
 
-    sendAT("AT+SHCONF=?");
-    sendAT("AT+SHCONF=\"URL\",\"http://httpbin.org\"");
+    // sendAT("AT+SHCONF=\"URL\",\"http://httpbin.org\""); // Set HTTP server URL
+    // sendAT("AT+SHCONF=\"BODYLEN\",1024"); // Set max HTTP body length
+    // sendAT("AT+SHCONF=\"HEADERLEN\",350"); // Set max HTTP header length
+
+    // sendAT("AT+SHCONN"); // Build and open HTTP connection
+    // delay(3000); // Wait for HTTP connection to be established
+    // sendAT("AT+SHSTATE?"); // Check HTTP connection state (1 == connected)
+
+    // sendAT("AT+SHCHEAD"); // Clear all HTTP headers
+
+    // sendAT("AT+SHAHEAD=\"Content-Type\",\"application/x-www-form-urlencoded\""); // Set POST content type
+    // sendAT("AT+SHAHEAD=\"Cache-Control\",\"no-cache\""); // Disable cashing
+    // sendAT("AT+SHAHEAD=\"Connection\",\"keep-alive\""); // Keep connection active
+    // sendAT("AT+SHAHEAD=\"Accept\",\"*/*\""); // Accept any response type
+
+    // sendAT("AT+SHCPARA"); // Clear HTTP body parameters
+
+    // sendAT("AT+SHPARA=\"product\",\"apple\""); // POST parameter: product=apple
+    // sendAT("AT+SHPARA=\"price\",\"1\""); // POST parameter: price=1
+
+    // int len = httpPostAndWait("/post"); // Send HTTP POST request to //post and wait for +SHREQ
+
+    // if (len > 0)
+    // {
+    //     sendAT(("AT+SHREAD=0," + String(len)).c_str()); // Read full HTTP response body
+    // }
+    // else
+    // {
+    //     logMessage("ERROR", "No +SHREQ received"); // POST timeout or failure
+    // }
+
+    // sendAT("AT+SHDISC"); // Close HTTP connection
+
+    sendAT("AT+CSSLCFG=\"sslversion\",1,3");
+    sendAT("AT+SHSSL=1,\"\"");
+
+    sendAT("AT+SHCONF=\"URL\",\"https://api.server-iot.duckdns.org\"");
     sendAT("AT+SHCONF=\"BODYLEN\",1024");
     sendAT("AT+SHCONF=\"HEADERLEN\",350");
+
     sendAT("AT+SHCONN");
-    delay(3000);
+    delay(10000);
     sendAT("AT+SHSTATE?");
-    sendAT("AT+SHREQ=\"/get\",1");
-    delay(3000);
-    sendAT("AT+SHREAD=0,384");
+
+    sendAT("AT+SHCHEAD");
+
+    sendAT("AT+SHAHEAD=\"Content-Type\",\"application/json\"");
+    sendAT("AT+SHAHEAD=\"Accept\",\"*/*\"");
+    sendAT("AT+SHAHEAD=\"Connection\",\"keep-alive\"");
+    sendAT("AT+SHAHEAD=\"x-api-key\",\"SOME_SECRET_KEY\"");
+
+    const char* json = "{\"longitude\":16.9946,\"latitude\":52.4514,\"timestamp\":\"11.02.2026 20:53:30\"}";
+
+    int jsonLen = strlen(json);
+
+    sendAT(("AT+SHBOD=" + String(jsonLen) + ",10000").c_str());
+    delay(200);
+
+    shieldSerial.print(json);
+    shieldSerial.write(0x1A);
+
+    delay(500);
+
+    sendAT("AT+CCLK?");
+    int len = httpPostAndWait("/upload_position");
+
+    if (len > 0)
+    {
+        sendAT(("AT+SHREAD=0," + String(len)).c_str());
+    }
+    else
+    {
+        logMessage("ERROR", "No +SHREQ received");
+    }
+
     sendAT("AT+SHDISC");
 
     // Initialize GNSS positioning
