@@ -61,14 +61,14 @@ def get_current_user(credentials: HTTPBasicCredentials = Depends(security_basic)
     if not (correct_username and correct_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Niepoprawny login lub hasło",
+            detail="Incorrect login or password",
             headers={"WWW-Authenticate": "Basic"},
         )
     return credentials.username
 class Position(BaseModel):
     longitude: float
     latitude: float
-    timestamp: int 
+    timestamp: str
 
 def get_last_location():
     if not os.path.exists(CSV_FILE):
@@ -110,7 +110,7 @@ async def save_position(data: Position):
         "lon": data.longitude
     })
 
-    return {"message": "Dane zapisane poprawnie", "saved_data": data}
+    return {"message": "Data saved correctly", "saved_data": data}
 @app.get("/healthcheck")
 def health_check():
     return {"status": "OK", "service": "Position API"}
