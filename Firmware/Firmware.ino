@@ -9,12 +9,12 @@
 #define PIN_RX 8
 #define HARD_UART_BAUDRATE 115200
 #define SOFT_UART_BAUDRATE 19200
-#define HTTP_SEND_INTERVAL_MS 60000
+#define HTTP_SEND_INTERVAL_MS 300000
 
 SoftwareSerial shieldSerial(PIN_RX, PIN_TX);
 DFRobot_SIM7070G SIM7070G(&shieldSerial);
 
-unsigned long lastSendMs = 0;
+unsigned long lastSendMs = 0; // Timestamp of last HTTP transmission
 
 // Log messages in UART in format - [Firmware] [LEVEL] - message
 template<typename T>
@@ -83,30 +83,39 @@ void initSIM7070G()
 // +CCLK: "26/02/11,20:53:30+04" --> 26/02/11,20:53:30+04
 bool getTimestamp(char* out, size_t outSize)
 {
+    // Ack modem for the current clock value
     shieldSerial.print("AT+CCLK?\r\n");
 
     unsigned long start = millis();
     String line = "";
 
+    // Wait up to 3 seconds for modem response
     while (millis() - start < 3000)
     {
         while (shieldSerial.available())
         {
             char c = shieldSerial.read();
-
+            
+            // End of line received
             if (c == '\n')
             {
                 line.trim();
 
+                // Look for +CCLK response
                 if (line.startsWith("+CCLK:"))
                 {
+                    // Extract timestamp between quotes
                     int q1 = line.indexOf('"');
                     int q2 = line.lastIndexOf('"');
 
-                    if (q1 < 0 || q2 < 0) return false;
+                    if (q1 < 0 || q2 < 0) 
+                    {
+                        return false;
+                    }
 
                     String ts = line.substring(q1 + 1, q2);
 
+                    // Parse data and time fields
                     int yy = ts.substring(0, 2).toInt();
                     int mm = ts.substring(3, 5).toInt();
                     int dd = ts.substring(6, 8).toInt();
@@ -114,8 +123,10 @@ bool getTimestamp(char* out, size_t outSize)
                     int mi = ts.substring(12, 14).toInt();
                     int ss = ts.substring(15, 17).toInt();
 
+                    // Convert year to full format
                     int yyyy = 2000 + yy;
 
+                    // Format timestamp as DD-MM-YYYY HH:MM:SS
                     snprintf(out, outSize, "%02d-%02d-%04d %02d:%02d:%02d", dd, mm, yyyy, hh, mi, ss);
 
                     return true;
@@ -125,6 +136,7 @@ bool getTimestamp(char* out, size_t outSize)
             }
             else
             {
+                // Accumulate characters until newline
                 line += c;
             }
         }
@@ -243,7 +255,7 @@ void initHTTP()
 bool openHTTP()
 {
     sendAT("AT+SHCONN"); // Open HTTP connection to the configured server
-    delay(15000); // Wait for HTTP connection establishment
+    delay(5000); // Wait for HTTP connection establishment
     sendAT("AT+SHSTATE?"); // Check HTTP connection state
     return true;
 }
@@ -294,25 +306,34 @@ void closeHTTP()
 // Enables GNSS and retrieves current latitude and longitude
 bool getGPS(double &lat, double &lon)
 {
+    // Power on GNSS module
     sendAT("AT+CGNSPWR=1");
 
+    // Wait up to 120 seconds for a valid GNSS
     unsigned long start = millis();
     while (millis() - start < 120000)
     {
         if (SIM7070G.getPosition())
         {
+            // Read latitude and longitute from modem
             lat = atof(SIM7070G.getLatitude());
             lon = atof(SIM7070G.getLongitude());
+
+            // Power off GNSS to save energy
             sendAT("AT+CGNSPWR=0");
             return true;
         }
+
+        // Retry every 2 seconds
         delay(2000);
     }
 
+    // GNSS timout, turn GNSS off
     sendAT("AT+CGNSPWR=0");
     return false;
 }
 
+// System initialization
 void setup() 
 {
     delay(10000);
@@ -325,58 +346,66 @@ void setup()
     initHTTP();
 }
 
+// System main loop
 void loop()
 {
-    double lat = 0.0;
-    double lon = 0.0;
-    char latStr[16];
-    char lonStr[16];
-    char json[192];
-    char timestamp[32];
+    double lat = 0.0; // Current GNSS latitude
+    double lon = 0.0; // Current GNSS longitude
+    char latStr[16]; // Latitude as string (for JSON)
+    char lonStr[16]; // Longitude as string (for JSON)
+    char json[192]; // HTTP JSON request body
+    char timestamp[32]; // Formatted modem timestamp
 
+    // Send data once per defined time
     if (millis() - lastSendMs < HTTP_SEND_INTERVAL_MS)
     {
         return;
     }
-
     lastSendMs = millis();
 
+    // Get GNSS position
     logMessage("INFO", "Getting GPS position...");
-
     if (!getGPS(lat, lon))
     {
         logMessage("ERROR", "GPS fix failed");
         return;
     }
-
     logMessage("INFO", String("Latitude: ") + lat);
     logMessage("INFO", String("Longitude: ") + lon);
 
+    // Small delay between GNSS and LTE switch
+    delay (2000);
+
+    // Open HTTP session
     openHTTP();
     setHTTPHeaders();
 
+    // Get modem timestamp
     if (!getTimestamp(timestamp, sizeof(timestamp)))
     {
         strcpy(timestamp, "00-00-0000 00:00:00");
     }
 
+    // Convert coorinates to strings
     dtostrf(lat, 0, 4, latStr);
     dtostrf(lon, 0, 4, lonStr);
 
+    // Build JSON payload
     snprintf(json, sizeof(json),
             "{\"longitude\":%s,"
             "\"latitude\":%s,"
             "\"timestamp\":\"%s\"}",
             lonStr, latStr, timestamp);
 
+    // Send HTTP body
     int jsonLen = strlen(json);
-
     sendAT(("AT+SHBOD=" + String(jsonLen) + ",10000").c_str());
     delay(200);
     shieldSerial.print(json);
     shieldSerial.write(0x1A);
     delay(500);
 
+    // Execute HTTP POST
     int len = httpPostAndWait("/upload_position");
     if (len > 0)
     {
@@ -387,6 +416,7 @@ void loop()
         logMessage("ERROR", "No +SHREQ received");
     }
 
+    // Close HTTP session
     closeHTTP();
 
     logMessage("INFO", "Send cycle complete");
