@@ -52,8 +52,8 @@
 
 <div id="status-panel">
     <span id="dot" class="status-dot"></span>
-    <span id="status-text">Inicjalizacja...</span><br>
-    <small id="last-update">Brak danych</small>
+    <span id="status-text">Initialization...</span><br>
+    <small id="last-update">No Data</small>
 </div>
 
 <div id="map"></div>
@@ -91,7 +91,7 @@
     function updateMap(data) {
         const newPos = [data.lat, data.lon];
         marker.setLatLng(newPos);
-        marker.bindPopup(`<b>IoT Device </b><br>Czas: ${data.time}`).openPopup();
+	    marker.bindPopup(`<b>IoT Device </b><br>Longitude: ${data.lon}, Latitude: ${data.lat}<br>Time: ${data.time}`).openPopup();
         map.panTo(newPos);
         
         const date = new Date(data.time * 1000); 
