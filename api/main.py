@@ -105,9 +105,9 @@ async def save_position(data: Position):
         writer = csv.writer(f)
         if not file_exists:
             writer.writerow(["timestamp", "latitude", "longitude"])
-        writer.writerow([data.timestamp, data.latitude, data.longitude])
+        writer.writerow([server_timestamp, data.latitude, data.longitude])
     await manager.broadcast({
-        "time": data.timestamp,
+        "time": server_timestamp,
         "lat": data.latitude,
         "lon": data.longitude
     })
