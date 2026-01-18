@@ -9,7 +9,7 @@
 #define PIN_RX 8
 #define HARD_UART_BAUDRATE 115200
 #define SOFT_UART_BAUDRATE 19200
-#define HTTP_SEND_INTERVAL_MS 300000
+#define HTTP_SEND_INTERVAL_MS 30000
 
 SoftwareSerial shieldSerial(PIN_RX, PIN_TX);
 DFRobot_SIM7070G SIM7070G(&shieldSerial);
@@ -27,7 +27,6 @@ void logMessage(const char* level, T message)
 }
 
 // Turn ON the shield, set up shield software UART and check SIM card 
-// Use this function only when using SIM7070G for the first time
 void initSIM7070G()
 {
     // Turn ON SIM7070G
@@ -225,8 +224,6 @@ int httpPostAndWait(const char* path, unsigned long timeoutMs = 20000)
 void initNetwork()
 {
     sendAT("AT+CNMP=51"); // Network mode preference: 38 = LTE-M only
-    sendAT("AT+CFUN=1,1"); // Full modem restart
-    delay(60000); // Wait for modem to reboot and initialize
     sendAT("AT+CEREG?"); // LTE registration status (0,1 = registered)
     sendAT("AT+CGATT?"); // Packet service attach status (internet access)
     sendAT("AT+CNCFG=0,1,\"internet\""); // Configure PDP context 0 (APN and IP type) for LTE-M
@@ -268,17 +265,6 @@ void setHTTPHeaders()
     sendAT("AT+SHAHEAD=\"Accept\",\"*/*\""); // Accept any response content type
     sendAT("AT+SHAHEAD=\"Connection\",\"close\""); // Keep HTTP connection alive for reuse
     sendAT("AT+SHAHEAD=\"x-api-key\",\"SOME_SECRET_KEY\""); // Custom API auth header
-}
-
-// Send JSON payload as HTTP request body
-bool sendJSONBody(const char* json)
-{
-    int jsonLen = strlen(json); // Calculate exact JSON payload length (bytes)
-    sendAT(("AT+SHBOD=" + String(jsonLen) + ",10000").c_str()); // Inform modem about incoming HTTP body size
-    delay(500); // Short delay to allow modem to enter data mode
-    shieldSerial.print(json); // Send JSON payload
-    delay(500); // Give modem time to process the body
-    return true;
 }
 
 // Send HTTP POST request with previously prepared JSON body and read response
@@ -341,6 +327,9 @@ void setup()
     Serial.begin(HARD_UART_BAUDRATE);
     shieldSerial.begin(SOFT_UART_BAUDRATE);
 
+    initSIM7070G();
+    delay(10000);
+
     initNetwork();
     initSSL();
     initHTTP();
@@ -370,8 +359,10 @@ void loop()
         logMessage("ERROR", "GPS fix failed");
         return;
     }
-    logMessage("INFO", String("Latitude: ") + lat);
-    logMessage("INFO", String("Longitude: ") + lon);
+
+     // Convert coorinates to strings
+    dtostrf(lat, 0, 4, latStr);
+    dtostrf(lon, 0, 4, lonStr);
 
     // Small delay between GNSS and LTE switch
     delay (2000);
@@ -380,15 +371,15 @@ void loop()
     openHTTP();
     setHTTPHeaders();
 
-    // Get modem timestamp
-    if (!getTimestamp(timestamp, sizeof(timestamp)))
-    {
-        strcpy(timestamp, "00-00-0000 00:00:00");
-    }
+    // // Get modem timestamp
+    // if (!getTimestamp(timestamp, sizeof(timestamp)))
+    // {
+    //     strcpy(timestamp, "00-00-0000 00:00:00");
+    // }
 
-    // Convert coorinates to strings
-    dtostrf(lat, 0, 4, latStr);
-    dtostrf(lon, 0, 4, lonStr);
+    snprintf(timestamp, sizeof(timestamp),"26-01-2026 14:25:53");
+
+    Serial.println(timestamp);
 
     // Build JSON payload
     snprintf(json, sizeof(json),
@@ -397,9 +388,13 @@ void loop()
             "\"timestamp\":\"%s\"}",
             lonStr, latStr, timestamp);
 
+    Serial.println(json);
+
     // Send HTTP body
     int jsonLen = strlen(json);
-    sendAT(("AT+SHBOD=" + String(jsonLen) + ",10000").c_str());
+    char cmd[32];
+    snprintf(cmd, sizeof(cmd), "AT+SHBOD=%d,10000\r\n", jsonLen);
+    shieldSerial.print(cmd);
     delay(200);
     shieldSerial.print(json);
     shieldSerial.write(0x1A);
@@ -407,14 +402,6 @@ void loop()
 
     // Execute HTTP POST
     int len = httpPostAndWait("/upload_position");
-    if (len > 0)
-    {
-        sendAT(("AT+SHREAD=0," + String(len)).c_str());
-    }
-    else
-    {
-        logMessage("ERROR", "No +SHREQ received");
-    }
 
     // Close HTTP session
     closeHTTP();
