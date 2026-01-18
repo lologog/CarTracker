@@ -9,7 +9,7 @@
 #define PIN_RX 8
 #define HARD_UART_BAUDRATE 115200
 #define SOFT_UART_BAUDRATE 19200
-#define HTTP_SEND_INTERVAL_MS 30000
+#define HTTP_SEND_INTERVAL_MS 300000
 
 SoftwareSerial shieldSerial(PIN_RX, PIN_TX);
 DFRobot_SIM7070G SIM7070G(&shieldSerial);
@@ -272,18 +272,18 @@ void setup()
 // System main loop
 void loop()
 {
-    double lat = 0.0; // Current GNSS latitude
-    double lon = 0.0; // Current GNSS longitude
-    char latStr[16]; // Latitude as string (for JSON)
-    char lonStr[16]; // Longitude as string (for JSON)
-    char json[192]; // HTTP JSON request body
-
     // Send data once per defined time
     if (millis() - lastSendMs < HTTP_SEND_INTERVAL_MS)
     {
         return;
     }
     lastSendMs = millis();
+
+    double lat = 0.0; // Current GNSS latitude
+    double lon = 0.0; // Current GNSS longitude
+    char latStr[16]; // Latitude as string (for JSON)
+    char lonStr[16]; // Longitude as string (for JSON)
+    char json[192]; // HTTP JSON request body
 
     // Get GNSS position
     logMessage("INFO", "Getting GPS position...");
