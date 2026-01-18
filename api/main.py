@@ -2,6 +2,7 @@ import csv
 import os
 import secrets  
 import asyncio
+from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, status, Security, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -68,16 +69,15 @@ def get_current_user(credentials: HTTPBasicCredentials = Depends(security_basic)
 class Position(BaseModel):
     longitude: float
     latitude: float
-    timestamp: str
 
 def get_last_location():
     if not os.path.exists(CSV_FILE):
-        return {"lat": 0, "lon": 0, "time": "Brak danych"}
+        return {"lat": 0, "lon": 0, "time": "No data"}
     
     with open(CSV_FILE, 'r') as f:
         lines = f.readlines()
         if len(lines) < 1:
-            return {"lat": 0, "lon": 0, "time": "Plik pusty"}
+            return {"lat": 0, "lon": 0, "time": "Empty File"}
         
         last_line = lines[-1].strip().split(',')
         return {
@@ -96,6 +96,8 @@ async def api_location():
 
 @app.post("/upload_position", dependencies=[Depends(get_api_key)])
 async def save_position(data: Position):
+
+    server_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     file_exists = os.path.isfile(CSV_FILE)
 
