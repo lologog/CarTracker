@@ -10,7 +10,6 @@
 #define PIN_RX 8
 #define HARD_UART_BAUDRATE 115200
 #define SOFT_UART_BAUDRATE 19200
-#define HTTP_SEND_INTERVAL_MS 300000
 
 SoftwareSerial shieldSerial(PIN_RX, PIN_TX);
 DFRobot_SIM7070G SIM7070G(&shieldSerial);
