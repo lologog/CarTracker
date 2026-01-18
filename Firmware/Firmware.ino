@@ -4,6 +4,7 @@
 */
 
 #include <DFRobot_SIM7070G.h>
+#include "LowPower.h"
 
 #define PIN_TX 7
 #define PIN_RX 8
@@ -13,8 +14,6 @@
 
 SoftwareSerial shieldSerial(PIN_RX, PIN_TX);
 DFRobot_SIM7070G SIM7070G(&shieldSerial);
-
-unsigned long lastSendMs = 0; // Timestamp of last HTTP transmission
 
 // Log messages in UART in format - [Firmware] [LEVEL] - message
 template<typename T>
@@ -256,8 +255,6 @@ bool getGPS(double &lat, double &lon)
 // System initialization
 void setup() 
 {
-    delay(10000);
-
     Serial.begin(HARD_UART_BAUDRATE);
     shieldSerial.begin(SOFT_UART_BAUDRATE);
 
@@ -272,13 +269,6 @@ void setup()
 // System main loop
 void loop()
 {
-    // Send data once per defined time
-    if (millis() - lastSendMs < HTTP_SEND_INTERVAL_MS)
-    {
-        return;
-    }
-    lastSendMs = millis();
-
     double lat = 0.0; // Current GNSS latitude
     double lon = 0.0; // Current GNSS longitude
     char latStr[16]; // Latitude as string (for JSON)
@@ -329,4 +319,11 @@ void loop()
     closeHTTP();
 
     logMessage("INFO", "Send cycle complete");
+
+    // Send data once per defined time (5 min)
+    for (int i = 0; i < 37; i++)
+    {
+        LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+    }
+    LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
 }
