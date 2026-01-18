@@ -78,72 +78,6 @@ void initSIM7070G()
     }
 }
 
-// Retrieves the current date and time from the modem and formats it into the format expected by the backend
-// +CCLK: "26/02/11,20:53:30+04" --> 26/02/11,20:53:30+04
-bool getTimestamp(char* out, size_t outSize)
-{
-    // Ack modem for the current clock value
-    shieldSerial.print("AT+CCLK?\r\n");
-
-    unsigned long start = millis();
-    String line = "";
-
-    // Wait up to 3 seconds for modem response
-    while (millis() - start < 3000)
-    {
-        while (shieldSerial.available())
-        {
-            char c = shieldSerial.read();
-            
-            // End of line received
-            if (c == '\n')
-            {
-                line.trim();
-
-                // Look for +CCLK response
-                if (line.startsWith("+CCLK:"))
-                {
-                    // Extract timestamp between quotes
-                    int q1 = line.indexOf('"');
-                    int q2 = line.lastIndexOf('"');
-
-                    if (q1 < 0 || q2 < 0) 
-                    {
-                        return false;
-                    }
-
-                    String ts = line.substring(q1 + 1, q2);
-
-                    // Parse data and time fields
-                    int yy = ts.substring(0, 2).toInt();
-                    int mm = ts.substring(3, 5).toInt();
-                    int dd = ts.substring(6, 8).toInt();
-                    int hh = ts.substring(9, 11).toInt();
-                    int mi = ts.substring(12, 14).toInt();
-                    int ss = ts.substring(15, 17).toInt();
-
-                    // Convert year to full format
-                    int yyyy = 2000 + yy;
-
-                    // Format timestamp as DD-MM-YYYY HH:MM:SS
-                    snprintf(out, outSize, "%02d-%02d-%04d %02d:%02d:%02d", dd, mm, yyyy, hh, mi, ss);
-
-                    return true;
-                }
-
-                line = "";
-            }
-            else
-            {
-                // Accumulate characters until newline
-                line += c;
-            }
-        }
-    }
-
-    return false;
-}
-
 // Send AT command to the modem and print response to Serial Monitor
 void sendAT(const char* cmd)
 {
@@ -343,7 +277,6 @@ void loop()
     char latStr[16]; // Latitude as string (for JSON)
     char lonStr[16]; // Longitude as string (for JSON)
     char json[192]; // HTTP JSON request body
-    char timestamp[32]; // Formatted modem timestamp
 
     // Send data once per defined time
     if (millis() - lastSendMs < HTTP_SEND_INTERVAL_MS)
@@ -371,22 +304,11 @@ void loop()
     openHTTP();
     setHTTPHeaders();
 
-    // // Get modem timestamp
-    // if (!getTimestamp(timestamp, sizeof(timestamp)))
-    // {
-    //     strcpy(timestamp, "00-00-0000 00:00:00");
-    // }
-
-    snprintf(timestamp, sizeof(timestamp),"26-01-2026 14:25:53");
-
-    Serial.println(timestamp);
-
     // Build JSON payload
     snprintf(json, sizeof(json),
             "{\"longitude\":%s,"
-            "\"latitude\":%s,"
-            "\"timestamp\":\"%s\"}",
-            lonStr, latStr, timestamp);
+            "\"latitude\":%s}",
+            lonStr, latStr);
 
     Serial.println(json);
 
