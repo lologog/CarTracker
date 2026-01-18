@@ -4,6 +4,7 @@
 */
 
 #include <DFRobot_SIM7070G.h>
+#include "LowPower.h"
 
 #define PIN_TX 7
 #define PIN_RX 8
@@ -23,7 +24,7 @@ void logMessage(const char* level, T message)
     Serial.println(message);
 }
 
-// Turn ON the shield, set up shield software UART, check SIM card and initialize GNSS positioning
+// Turn ON the shield, set up shield software UART and check SIM card 
 void initSIM7070G()
 {
     // Turn ON SIM7070G
@@ -73,50 +74,255 @@ void initSIM7070G()
             delay(1000);
         }
     }
+}
 
-    // Initialize GNSS positioning
-    while (1)
+// Send AT command to the modem and print response to Serial Monitor
+void sendAT(const char* cmd)
+{
+    // Print command to Serial Monitor
+    Serial.print(">> ");
+    Serial.println(cmd);
+
+    // Send AT command to SIM7070G via software serial
+    shieldSerial.print(cmd);
+    shieldSerial.print("\r\n");
+
+    // Read modem response for up to 3 seconds
+    unsigned long t = millis();
+    while (millis() - t < 3000) 
     {
-        logMessage("INFO", "Initializing GNSS positioning...");
-        if (SIM7070G.initPos())
+        while (shieldSerial.available()) 
         {
-            logMessage("INFO", "GNSS positioning initialized");
-            break;
-        }
-        else
-        {
-            logMessage("ERROR", "Failed to initialize GNSS positioning, retrying...");
-            delay(1000);
+            char c = shieldSerial.read();
+            Serial.write(c);
         }
     }
+
+    Serial.println("\n----");
 }
 
-void setup() 
+// HTTP post and wait for response due to catch +SHREQ response body size
+int httpPostAndWait(const char* path, unsigned long timeoutMs = 20000)
 {
-    delay(10000);
+    // Clear RX buffer to avoid parsing old data
+    while (shieldSerial.available()) shieldSerial.read();
 
-    // hardware UART communication with serial monitor
-    Serial.begin(HARD_UART_BAUDRATE);
+    // Send HTTP POST request (method=3)
+    shieldSerial.print("AT+SHREQ=\"");
+    shieldSerial.print(path);
+    shieldSerial.print("\",3\r\n");
 
-    // software UART communication between Arduino and SIM7070G shield 
-    shieldSerial.begin(SOFT_UART_BAUDRATE);
+    String line = "";
+    unsigned long start = millis();
 
-    initSIM7070G();
-}
-
-void loop() 
-{
-    // Get device position
-    logMessage("INFO", "Getting device position...");
-    if (SIM7070G.getPosition())
+    // Wait for the response from the server - max timeout 20 sec
+    while (millis() - start < timeoutMs)
     {
-        logMessage("INFO", String("Latitude: ") + SIM7070G.getLatitude());
-        logMessage("INFO", String("Longitude: ") + SIM7070G.getLongitude());
+        while (shieldSerial.available())
+        {
+            // Read one letter
+            char c = shieldSerial.read();
+            Serial.write(c);
+
+            // Whole line read
+            if (c == '\n')
+            {
+                // Remove white signs
+                line.trim();
+
+                // Search for response +SHREQ response after POST
+                if (line.startsWith("+SHREQ:"))
+                {
+                    // Take body length given by the response (+SHREQ: "POST",200,449 <-- length)
+                    int lastComma = line.lastIndexOf(',');
+                    if (lastComma > 0)
+                    {
+                        int len = line.substring(lastComma + 1).toInt();
+                        return len;
+                    }
+                }
+                line = "";
+            }
+            else
+            {
+                line += c;
+            }
+        }
+    }
+    return -1;
+}
+
+// Initialize LTE-M network and establish data connection
+void initNetwork()
+{
+    sendAT("AT+CNMP=51"); // Network mode preference: 38 = LTE-M only
+    sendAT("AT+CEREG?"); // LTE registration status (0,1 = registered)
+    sendAT("AT+CGATT?"); // Packet service attach status (internet access)
+    sendAT("AT+CNCFG=0,1,\"internet\""); // Configure PDP context 0 (APN and IP type) for LTE-M
+    sendAT("AT+CNACT=0,1"); // Activate PDP context 0 and establish data connection
+    delay(3000); // Allow time to obtain IP address
+    sendAT("AT+CNACT?"); // Query PDP context status and assigned IP address
+    sendAT("AT+CPSI?"); // Current radio connection status (RAT, band, signal)
+}
+
+// Configure SSL/TLS for HTTPS communication
+void initSSL()
+{
+    sendAT("AT+CSSLCFG=\"sslversion\",1,3"); // Configure SSL context 1 to use TLS v1.2
+    sendAT("AT+SHSSL=1,\"\""); // Enable SSL for HTTP service using context 1
+}
+
+// Configure HTTP client parameters
+void initHTTP()
+{
+    sendAT("AT+SHCONF=\"URL\",\"https://api.server-iot.duckdns.org\""); // Set base URL for all HTTP requests
+    sendAT("AT+SHCONF=\"BODYLEN\",1024"); // Set max allowed HTTP body size (bytes)
+    sendAT("AT+SHCONF=\"HEADERLEN\",350"); // Set max allowed HTTP header size (bytes)
+}
+
+// Open HTTP connection to the configured server
+bool openHTTP()
+{
+    sendAT("AT+SHCONN"); // Open HTTP connection to the configured server
+    delay(5000); // Wait for HTTP connection establishment
+    sendAT("AT+SHSTATE?"); // Check HTTP connection state
+    return true;
+}
+
+// Set HTTP request headers for JSON-based communication
+void setHTTPHeaders()
+{
+    sendAT("AT+SHCHEAD"); // Clear previously set HTTP headers
+    sendAT("AT+SHAHEAD=\"Content-Type\",\"application/json\""); // Set content type to JSON (backend eqpects JSON body)
+    sendAT("AT+SHAHEAD=\"Accept\",\"*/*\""); // Accept any response content type
+    sendAT("AT+SHAHEAD=\"Connection\",\"close\""); // Keep HTTP connection alive for reuse
+    sendAT("AT+SHAHEAD=\"x-api-key\",\"SOME_SECRET_KEY\""); // Custom API auth header
+}
+
+// Send HTTP POST request with previously prepared JSON body and read response
+void postJson(const char* endpoint)
+{
+    int len = httpPostAndWait(endpoint); // Send HTTP POST request to the given endpoint
+    if (len > 0)
+    {
+        // read full HTTP response body
+        sendAT(("AT+SHREAD=0," + String(len)).c_str());
     }
     else
     {
-        logMessage("ERROR", "Failed to get device position");
+        //No response received within timeout
+        logMessage("ERROR", "No +SHREQ received");
+    }
+}
+
+// Close HTTP connection and release allocated resources
+void closeHTTP()
+{
+    sendAT("AT+SHDISC"); // Close HTTP connection and release resources
+}
+
+// Enables GNSS and retrieves current latitude and longitude
+bool getGPS(double &lat, double &lon)
+{
+    // Power on GNSS module
+    sendAT("AT+CGNSPWR=1");
+
+    // Wait up to 120 seconds for a valid GNSS
+    unsigned long start = millis();
+    while (millis() - start < 120000)
+    {
+        if (SIM7070G.getPosition())
+        {
+            // Read latitude and longitute from modem
+            lat = atof(SIM7070G.getLatitude());
+            lon = atof(SIM7070G.getLongitude());
+
+            // Power off GNSS to save energy
+            sendAT("AT+CGNSPWR=0");
+            return true;
+        }
+
+        // Retry every 2 seconds
+        delay(2000);
     }
 
-    delay(1000);
+    // GNSS timout, turn GNSS off
+    sendAT("AT+CGNSPWR=0");
+    return false;
+}
+
+// System initialization
+void setup() 
+{
+    Serial.begin(HARD_UART_BAUDRATE);
+    shieldSerial.begin(SOFT_UART_BAUDRATE);
+
+    initSIM7070G();
+    delay(10000);
+
+    initNetwork();
+    initSSL();
+    initHTTP();
+}
+
+// System main loop
+void loop()
+{
+    double lat = 0.0; // Current GNSS latitude
+    double lon = 0.0; // Current GNSS longitude
+    char latStr[16]; // Latitude as string (for JSON)
+    char lonStr[16]; // Longitude as string (for JSON)
+    char json[192]; // HTTP JSON request body
+
+    // Get GNSS position
+    logMessage("INFO", "Getting GPS position...");
+    if (!getGPS(lat, lon))
+    {
+        logMessage("ERROR", "GPS fix failed");
+        return;
+    }
+
+     // Convert coorinates to strings
+    dtostrf(lat, 0, 4, latStr);
+    dtostrf(lon, 0, 4, lonStr);
+
+    // Small delay between GNSS and LTE switch
+    delay (2000);
+
+    // Open HTTP session
+    openHTTP();
+    setHTTPHeaders();
+
+    // Build JSON payload
+    snprintf(json, sizeof(json),
+            "{\"longitude\":%s,"
+            "\"latitude\":%s}",
+            lonStr, latStr);
+
+    Serial.println(json);
+
+    // Send HTTP body
+    int jsonLen = strlen(json);
+    char cmd[32];
+    snprintf(cmd, sizeof(cmd), "AT+SHBOD=%d,10000\r\n", jsonLen);
+    shieldSerial.print(cmd);
+    delay(200);
+    shieldSerial.print(json);
+    shieldSerial.write(0x1A);
+    delay(500);
+
+    // Execute HTTP POST
+    int len = httpPostAndWait("/upload_position");
+
+    // Close HTTP session
+    closeHTTP();
+
+    logMessage("INFO", "Send cycle complete");
+
+    // Send data once per defined time (5 min)
+    for (int i = 0; i < 37; i++)
+    {
+        LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+    }
+    LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
 }
