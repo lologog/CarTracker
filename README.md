@@ -2,6 +2,9 @@
 Car GPS/GSM tracker based on Arduino with a Leaflet Map
 ## About Project
 CarTracker is a streamlined solution for real-time tracking of Arduino-based IoT devices. Equipped with a GSM module, the device captures GPS coordinates (latitude and longitude) and securely transmits them to a cloud server using robust encryption. The project is designed with scalability in mind, allowing for future expansion and new features.
+### Preview
+<img src="https://github.com/lologog/CarTracker/blob/main/images/car-tracker-dashboard.png" alt="Dashboard Preview" width="600">
+
 ## Repository Structure
 ```
 ├── api
@@ -108,7 +111,7 @@ CarTracker is a streamlined solution for real-time tracking of Arduino-based IoT
    systemctl start car-tracker.service
    ```
 ### Arduino with GSM module
-
+**TODO**
 ## Usage
 Once configuration is complete on both sides, the position will update automatically and appear on the map. However, if you provide the **API_KEY** defined in your .**env** file, you can also update the marker manually via the API.
 ```bash
@@ -188,7 +191,7 @@ This repository implements a simple end-to-end car GPS tracker made of two parts
   - Connects to `/ws` and updates the marker in real time when new messages arrive.
 - **Connection status UI**
   - Shows a small status panel indicating “connected/disconnected” state and last update time, with automatic reconnect on disconnect.
-**TODO**
+
 ## Authors
 * **lologog** - *IoT, Hardware and Repository Maintainer* - [@lologog](https://github.com/lologog)
 * **konsept619** - *Backend, Frontend and Documentation* - [@konsept619](https://github.com/konsept619)
