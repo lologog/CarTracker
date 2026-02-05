@@ -113,7 +113,7 @@ CarTracker is a streamlined solution for real-time tracking of Arduino-based IoT
    systemctl start car-tracker.service
    ```
 
-### Arduino with GSM module
+### Device Setup (Arduino + SIM7070G)
 
 This project uses an **Arduino Uno Rev3** together with the **DFRobot NB-IoT/LTE/GNSS Shield (SIM7070G)** to acquire **GNSS/GPS** position and send it to the backend over **LTE-M**.
 
