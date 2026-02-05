@@ -40,8 +40,10 @@ CarTracker is a streamlined solution for real-time tracking of Arduino-based IoT
 ### IoT & Hardware
 ![Arduino](https://img.shields.io/badge/-Arduino-00979D?style=for-the-badge&logo=Arduino&logoColor=white) ![C++](https://img.shields.io/badge/c++-%2300599C.svg?style=for-the-badge&logo=c%2B%2B&logoColor=white)
 
-* **Arduino:** Hardware platform for gathering GPS data.
-* **C++:** Used for writing firmware to handle sensors and GSM communication.
+* **Arduino Uno Rev3:** Main microcontroller board used to run the firmware and control the device.
+* **DFRobot NB-IoT/LTE/GNSS Shield (SIM7070G, DFR0572):** Connectivity + positioning module used for **LTE-M** data transmission and **GNSS/GPS** location acquisition.
+* **C++:** Used for writing firmware to handle modem communication and GPS/GNSS data processing.
+
 
 ## Instalation and Configuration
 ### Server (Debian)
@@ -110,8 +112,57 @@ CarTracker is a streamlined solution for real-time tracking of Arduino-based IoT
    systemctl enable car-tracker.service
    systemctl start car-tracker.service
    ```
+
 ### Arduino with GSM module
-**TODO**
+
+This project uses an **Arduino Uno Rev3** together with the **DFRobot NB-IoT/LTE/GNSS Shield (SIM7070G)** to acquire **GNSS/GPS** position and send it to the backend over **LTE-M**.
+
+#### 1) Hardware setup
+- Mount the **SIM7070G shield** on the **Arduino Uno Rev3**.
+- Insert a **SIM card** with an active data plan (LTE-M / NB-IoT depending on your operator).
+- Connect an **LTE antenna** and a **GNSS/GPS antenna** (recommended for reliable fixes).
+- Power the board via **USB** (development) or a stable external supply (recommended for real usage).
+
+#### 2) Firmware configuration
+Open `Firmware/Firmware.ino` and update the following values:
+
+- **APN** (required to establish an IP data connection)  
+  In `initNetwork()`:
+  - `AT+CNCFG=0,1,"internet"` → replace `"internet"` with your operator APN.
+
+- **Backend base URL**  
+  In `initHTTP()`:
+  - `AT+SHCONF="URL","https://api.server-iot.duckdns.org"` → replace with your domain/host (HTTPS recommended).
+
+- **API key** (must match `API_KEY` on the server)  
+  In `setHTTPHeaders()`:
+  - `AT+SHAHEAD="x-api-key","SOME_SECRET_KEY"` → replace with your secret key.
+
+- **Update interval**  
+  Defined by the `LowPower` sleep loop at the end of `loop()` (default is ~5 minutes).
+
+> Tip: keep the backend reachable via HTTPS and make sure the device can resolve your domain (DNS).
+
+#### 3) Flashing the firmware
+1. Open `Firmware/Firmware.ino` in **Arduino IDE**
+2. Select board: `Arduino Uno`
+3. Select the correct serial port
+4. Compile and upload the sketch
+
+After flashing, open **Serial Monitor** (115200 baud) to verify:
+- modem boot & SIM ready
+- network registration + PDP context activation
+- GNSS/GPS fix acquisition
+- successful HTTPS POST to `/upload_position`
+
+#### 4) How it works (runtime flow)
+The device runs a periodic cycle:
+1. Wake up
+2. Initialize the modem and attach to the LTE network (LTE-M)
+3. Obtain GNSS/GPS coordinates
+4. Send a JSON payload to `POST /upload_position` with the `x-api-key` header
+5. Go back to sleep to save power
+
 ## Usage
 Once configuration is complete on both sides, the position will update automatically and appear on the map. However, if you provide the **API_KEY** defined in your .**env** file, you can also update the marker manually via the API.
 ```bash
