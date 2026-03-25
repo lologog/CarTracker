@@ -88,5 +88,5 @@ curl -X POST https://your-domain.com/upload_position -H "Content-Type: applicati
 More info regarding installation, setup and used function can be found here: [installation-setup](installation-setup.md)
 
 ## Authors
-* **lologog** - *IoT, Hardware and Repository Maintainer* - [@lologog](https://github.com/lologog)
-* **konsept619** - *Backend, Frontend and Documentation* - [@konsept619](https://github.com/konsept619)
+* **Krzysztof Tomicki** - *IoT, Hardware and Repository Maintainer* - [@lologog](https://github.com/lologog)
+* **Konrad Wrzesień** - *Backend, Frontend and Documentation* - [@konsept619](https://github.com/konsept619)
