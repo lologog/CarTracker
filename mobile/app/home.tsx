@@ -21,11 +21,20 @@ export default function Home() {
     'Pozycja użytkownika nie została jeszcze wysłana.'
   );
   const [carStatus, setCarStatus] = useState('Pobieram lokalizację auta...');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
-    getCurrentLocation();
-    getCarLocation();
+    refreshLocations();
   }, []);
+
+  async function refreshLocations() {
+    setIsRefreshing(true);
+
+    await getCurrentLocation();
+    await getCarLocation();
+
+    setIsRefreshing(false);
+  }
 
   async function getCurrentLocation() {
     const permission = await Location.requestForegroundPermissionsAsync();
@@ -35,7 +44,11 @@ export default function Home() {
       return;
     }
 
-    const location = await Location.getCurrentPositionAsync({});
+    setLocationStatus('Pobieram lokalizację użytkownika...');
+
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
 
     const currentLatitude = location.coords.latitude;
     const currentLongitude = location.coords.longitude;
@@ -146,7 +159,17 @@ export default function Home() {
         </Text>
       </View>
 
-      <TouchableOpacity style={styles.button} onPress={handleLogout}>
+      <TouchableOpacity
+        style={[styles.button, isRefreshing && styles.buttonDisabled]}
+        onPress={refreshLocations}
+        disabled={isRefreshing}
+      >
+        <Text style={styles.buttonText}>
+          {isRefreshing ? 'Odświeżam...' : 'Odśwież lokalizację'}
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Text style={styles.buttonText}>Wyloguj</Text>
       </TouchableOpacity>
     </View>
@@ -218,6 +241,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 6,
     alignItems: 'center',
+  },
+  logoutButton: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#4b5563',
+    padding: 15,
+    borderRadius: 12,
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   buttonText: {
     color: '#ffffff',
