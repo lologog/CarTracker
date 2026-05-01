@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import {
   StyleSheet,
@@ -10,6 +11,10 @@ import {
 export default function Index() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
+
+  function handleLogin() {
+    router.push('/home');
+  }
 
   return (
     <View style={styles.container}>
@@ -34,7 +39,7 @@ export default function Index() {
         textAlign="center"
       />
 
-      <TouchableOpacity style={styles.button}>
+      <TouchableOpacity style={styles.button} onPress={handleLogin}>
         <Text style={styles.buttonText}>Zaloguj</Text>
       </TouchableOpacity>
     </View>
