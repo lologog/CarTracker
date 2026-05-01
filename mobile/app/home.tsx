@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
 
 const API_URL = 'http://85.215.210.57';
 const API_KEY = process.env.EXPO_PUBLIC_API_KEY;
@@ -22,6 +23,9 @@ export default function Home() {
   );
   const [carStatus, setCarStatus] = useState('Pobieram lokalizację auta...');
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const hasUserLocation = userLatitude !== null && userLongitude !== null;
+  const hasCarLocation = carLatitude !== null && carLongitude !== null;
 
   useEffect(() => {
     refreshLocations();
@@ -118,14 +122,56 @@ export default function Home() {
     router.replace('/');
   }
 
+  const mapRegion =
+    hasUserLocation
+      ? {
+          latitude: userLatitude,
+          longitude: userLongitude,
+          latitudeDelta: 0.03,
+          longitudeDelta: 0.03,
+        }
+      : {
+          latitude: 52.2297,
+          longitude: 21.0122,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>CarTracker</Text>
-      <Text style={styles.subtitle}>Lokalizacja użytkownika i auta</Text>
+      <Text style={styles.subtitle}>Mapa użytkownika i auta</Text>
+
+      <View style={styles.mapBox}>
+        <MapView style={styles.map} initialRegion={mapRegion}>
+          {hasUserLocation && (
+            <Marker
+              coordinate={{
+                latitude: userLatitude,
+                longitude: userLongitude,
+              }}
+              title="Twoja lokalizacja"
+              description="Aktualna pozycja użytkownika"
+              pinColor="blue"
+            />
+          )}
+
+          {hasCarLocation && (
+            <Marker
+              coordinate={{
+                latitude: carLatitude,
+                longitude: carLongitude,
+              }}
+              title="Lokalizacja auta"
+              description={`Ostatnia aktualizacja: ${carTime}`}
+              pinColor="red"
+            />
+          )}
+        </MapView>
+      </View>
 
       <View style={styles.locationBox}>
         <Text style={styles.boxTitle}>Twoja lokalizacja</Text>
-
         <Text style={styles.status}>{locationStatus}</Text>
         <Text style={styles.status}>{sendStatus}</Text>
 
@@ -142,7 +188,6 @@ export default function Home() {
 
       <View style={styles.locationBox}>
         <Text style={styles.boxTitle}>Lokalizacja auta</Text>
-
         <Text style={styles.status}>{carStatus}</Text>
 
         <Text style={styles.label}>Ostatnia aktualizacja</Text>
@@ -179,76 +224,91 @@ export default function Home() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: 16,
     backgroundColor: '#f3f4f6',
   },
   title: {
-    fontSize: 32,
+    fontSize: 30,
     fontWeight: '800',
     color: '#111827',
-    marginBottom: 8,
+    marginTop: 28,
+    marginBottom: 4,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#6b7280',
-    marginBottom: 16,
+    marginBottom: 12,
     textAlign: 'center',
+  },
+  mapBox: {
+    width: '100%',
+    maxWidth: 420,
+    height: 260,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#ffffff',
+  },
+  map: {
+    width: '100%',
+    height: '100%',
   },
   locationBox: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 420,
     backgroundColor: '#ffffff',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    padding: 12,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#d1d5db',
   },
   boxTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
     color: '#111827',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   status: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#374151',
-    marginBottom: 8,
+    marginBottom: 6,
     textAlign: 'center',
   },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6b7280',
     textAlign: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   value: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     color: '#111827',
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   button: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 420,
     backgroundColor: '#111827',
-    padding: 15,
+    padding: 14,
     borderRadius: 12,
-    marginTop: 6,
+    marginTop: 2,
     alignItems: 'center',
   },
   logoutButton: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 420,
     backgroundColor: '#4b5563',
-    padding: 15,
+    padding: 14,
     borderRadius: 12,
-    marginTop: 10,
+    marginTop: 8,
     alignItems: 'center',
   },
   buttonDisabled: {
