@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
+  Alert,
   StyleSheet,
   Text,
   TextInput,
@@ -8,12 +9,49 @@ import {
   View,
 } from 'react-native';
 
+const API_URL = 'http://85.215.210.57';
+
 export default function Index() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  function handleLogin() {
-    router.push('/home');
+  async function handleLogin() {
+    if (!login.trim()) {
+      Alert.alert('Brak loginu', 'Wpisz login.');
+      return;
+    }
+
+    if (!password.trim()) {
+      Alert.alert('Brak hasła', 'Wpisz hasło.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      const response = await fetch(`${API_URL}/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: login.trim(),
+          password: password,
+        }),
+      });
+
+      if (!response.ok) {
+        Alert.alert('Błąd logowania', 'Nieprawidłowy login lub hasło.');
+        return;
+      }
+
+      router.push('/home');
+    } catch (error) {
+      Alert.alert('Błąd połączenia', 'Nie udało się połączyć z serwerem.');
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -39,8 +77,14 @@ export default function Index() {
         textAlign="center"
       />
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Zaloguj</Text>
+      <TouchableOpacity
+        style={[styles.button, isLoading && styles.buttonDisabled]}
+        onPress={handleLogin}
+        disabled={isLoading}
+      >
+        <Text style={styles.buttonText}>
+          {isLoading ? 'Logowanie...' : 'Zaloguj'}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -86,6 +130,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 6,
     alignItems: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   buttonText: {
     color: '#ffffff',
