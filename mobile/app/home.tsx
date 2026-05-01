@@ -128,20 +128,27 @@ export default function Home() {
     router.replace('/');
   }
 
-  const mapRegion =
-    hasUserLocation
-      ? {
-          latitude: userLatitude,
-          longitude: userLongitude,
-          latitudeDelta: 0.03,
-          longitudeDelta: 0.03,
+    const mapRegion =
+    hasCarLocation
+        ? {
+            latitude: carLatitude,
+            longitude: carLongitude,
+            latitudeDelta: 0.003,
+            longitudeDelta: 0.003,
         }
-      : {
-          latitude: 52.2297,
-          longitude: 21.0122,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        };
+        : hasUserLocation
+        ? {
+            latitude: userLatitude,
+            longitude: userLongitude,
+            latitudeDelta: 0.003,
+            longitudeDelta: 0.003,
+            }
+        : {
+            latitude: 52.2297,
+            longitude: 21.0122,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+            };
 
   return (
     <ScrollView
@@ -153,7 +160,7 @@ export default function Home() {
       <Text style={styles.subtitle}>Mapa użytkownika i auta</Text>
 
       <View style={styles.mapBox}>
-        <MapView style={styles.map} initialRegion={mapRegion}>
+        <MapView style={styles.map} region={mapRegion}>
           {hasUserLocation && (
             <Marker
               coordinate={{
