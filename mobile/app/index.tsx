@@ -59,22 +59,20 @@ export default function Index() {
       <Text style={styles.title}>CarTracker</Text>
       <Text style={styles.subtitle}>Zaloguj się do aplikacji</Text>
 
+      <Text style={styles.inputLabel}>Login</Text>
       <TextInput
         style={styles.input}
-        placeholder="Login"
         value={login}
         onChangeText={setLogin}
         autoCapitalize="none"
-        textAlign="center"
       />
 
+      <Text style={styles.inputLabel}>Hasło</Text>
       <TextInput
         style={styles.input}
-        placeholder="Hasło"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
-        textAlign="center"
       />
 
       <TouchableOpacity
@@ -111,16 +109,26 @@ const styles = StyleSheet.create({
     marginBottom: 28,
     textAlign: 'center',
   },
+  inputLabel: {
+    width: '100%',
+    maxWidth: 360,
+    color: '#6b7280',
+    fontSize: 14,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
   input: {
     width: '100%',
     maxWidth: 360,
     borderWidth: 1,
     borderColor: '#d1d5db',
     borderRadius: 12,
-    padding: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
     marginBottom: 14,
     fontSize: 16,
     backgroundColor: '#ffffff',
+    textAlign: 'center',
   },
   button: {
     width: '100%',
