@@ -3,11 +3,17 @@ import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+const API_URL = 'http://85.215.210.57';
+const API_KEY = process.env.EXPO_PUBLIC_API_KEY;
+
 export default function Home() {
   const [userLatitude, setUserLatitude] = useState<number | null>(null);
   const [userLongitude, setUserLongitude] = useState<number | null>(null);
   const [locationStatus, setLocationStatus] = useState(
     'Pobieram lokalizację użytkownika...'
+  );
+  const [sendStatus, setSendStatus] = useState(
+    'Pozycja użytkownika nie została jeszcze wysłana.'
   );
 
   useEffect(() => {
@@ -24,9 +30,46 @@ export default function Home() {
 
     const location = await Location.getCurrentPositionAsync({});
 
-    setUserLatitude(location.coords.latitude);
-    setUserLongitude(location.coords.longitude);
+    const currentLatitude = location.coords.latitude;
+    const currentLongitude = location.coords.longitude;
+
+    setUserLatitude(currentLatitude);
+    setUserLongitude(currentLongitude);
     setLocationStatus('Lokalizacja użytkownika pobrana.');
+
+    await sendUserLocation(currentLatitude, currentLongitude);
+  }
+
+  async function sendUserLocation(latitude: number, longitude: number) {
+    if (!API_KEY) {
+      setSendStatus('Brak API key w konfiguracji aplikacji.');
+      return;
+    }
+
+    try {
+      setSendStatus('Wysyłam pozycję użytkownika do backendu...');
+
+      const response = await fetch(`${API_URL}/upload_user_position`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_KEY,
+        },
+        body: JSON.stringify({
+          latitude: latitude,
+          longitude: longitude,
+        }),
+      });
+
+      if (!response.ok) {
+        setSendStatus('Nie udało się wysłać pozycji użytkownika.');
+        return;
+      }
+
+      setSendStatus('Pozycja użytkownika wysłana do backendu.');
+    } catch (error) {
+      setSendStatus('Błąd połączenia z backendem.');
+    }
   }
 
   function handleLogout() {
@@ -42,6 +85,7 @@ export default function Home() {
         <Text style={styles.boxTitle}>Twoja pozycja</Text>
 
         <Text style={styles.status}>{locationStatus}</Text>
+        <Text style={styles.status}>{sendStatus}</Text>
 
         <Text style={styles.label}>Latitude</Text>
         <Text style={styles.value}>
@@ -102,7 +146,7 @@ const styles = StyleSheet.create({
   status: {
     fontSize: 13,
     color: '#374151',
-    marginBottom: 12,
+    marginBottom: 8,
     textAlign: 'center',
   },
   label: {
