@@ -177,12 +177,12 @@ export default function Home() {
 
         <Text style={styles.label}>Latitude</Text>
         <Text style={styles.value}>
-          {userLatitude !== null ? userLatitude : '---'}
+          {userLatitude !== null ? userLatitude.toFixed(4) : '---'}
         </Text>
 
         <Text style={styles.label}>Longitude</Text>
         <Text style={styles.value}>
-          {userLongitude !== null ? userLongitude : '---'}
+          {userLongitude !== null ? userLongitude.toFixed(4) : '---'}
         </Text>
       </View>
 
@@ -195,12 +195,12 @@ export default function Home() {
 
         <Text style={styles.label}>Latitude</Text>
         <Text style={styles.value}>
-          {carLatitude !== null ? carLatitude : '---'}
+          {carLatitude !== null ? carLatitude.toFixed(4) : '---'}
         </Text>
 
         <Text style={styles.label}>Longitude</Text>
         <Text style={styles.value}>
-          {carLongitude !== null ? carLongitude : '---'}
+          {carLongitude !== null ? carLongitude.toFixed(4) : '---'}
         </Text>
       </View>
 
