@@ -9,15 +9,22 @@ const API_KEY = process.env.EXPO_PUBLIC_API_KEY;
 export default function Home() {
   const [userLatitude, setUserLatitude] = useState<number | null>(null);
   const [userLongitude, setUserLongitude] = useState<number | null>(null);
+
+  const [carLatitude, setCarLatitude] = useState<number | null>(null);
+  const [carLongitude, setCarLongitude] = useState<number | null>(null);
+  const [carTime, setCarTime] = useState('---');
+
   const [locationStatus, setLocationStatus] = useState(
     'Pobieram lokalizację użytkownika...'
   );
   const [sendStatus, setSendStatus] = useState(
     'Pozycja użytkownika nie została jeszcze wysłana.'
   );
+  const [carStatus, setCarStatus] = useState('Pobieram lokalizację auta...');
 
   useEffect(() => {
     getCurrentLocation();
+    getCarLocation();
   }, []);
 
   async function getCurrentLocation() {
@@ -72,6 +79,28 @@ export default function Home() {
     }
   }
 
+  async function getCarLocation() {
+    try {
+      setCarStatus('Pobieram lokalizację auta...');
+
+      const response = await fetch(`${API_URL}/location`);
+
+      if (!response.ok) {
+        setCarStatus('Nie udało się pobrać lokalizacji auta.');
+        return;
+      }
+
+      const data = await response.json();
+
+      setCarLatitude(data.lat);
+      setCarLongitude(data.lon);
+      setCarTime(data.time);
+      setCarStatus('Lokalizacja auta pobrana.');
+    } catch (error) {
+      setCarStatus('Błąd połączenia przy pobieraniu lokalizacji auta.');
+    }
+  }
+
   function handleLogout() {
     router.replace('/');
   }
@@ -79,10 +108,10 @@ export default function Home() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>CarTracker</Text>
-      <Text style={styles.subtitle}>Twoja aktualna lokalizacja</Text>
+      <Text style={styles.subtitle}>Lokalizacja użytkownika i auta</Text>
 
       <View style={styles.locationBox}>
-        <Text style={styles.boxTitle}>Twoja pozycja</Text>
+        <Text style={styles.boxTitle}>Twoja lokalizacja</Text>
 
         <Text style={styles.status}>{locationStatus}</Text>
         <Text style={styles.status}>{sendStatus}</Text>
@@ -95,6 +124,25 @@ export default function Home() {
         <Text style={styles.label}>Longitude</Text>
         <Text style={styles.value}>
           {userLongitude !== null ? userLongitude : '---'}
+        </Text>
+      </View>
+
+      <View style={styles.locationBox}>
+        <Text style={styles.boxTitle}>Lokalizacja auta</Text>
+
+        <Text style={styles.status}>{carStatus}</Text>
+
+        <Text style={styles.label}>Ostatnia aktualizacja</Text>
+        <Text style={styles.value}>{carTime}</Text>
+
+        <Text style={styles.label}>Latitude</Text>
+        <Text style={styles.value}>
+          {carLatitude !== null ? carLatitude : '---'}
+        </Text>
+
+        <Text style={styles.label}>Longitude</Text>
+        <Text style={styles.value}>
+          {carLongitude !== null ? carLongitude : '---'}
         </Text>
       </View>
 
