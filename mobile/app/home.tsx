@@ -1,17 +1,175 @@
 import { router } from 'expo-router';
+import * as Location from 'expo-location';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+const API_URL = 'http://85.215.210.57';
+const API_KEY = process.env.EXPO_PUBLIC_API_KEY;
+
 export default function Home() {
+  const [userLatitude, setUserLatitude] = useState<number | null>(null);
+  const [userLongitude, setUserLongitude] = useState<number | null>(null);
+
+  const [carLatitude, setCarLatitude] = useState<number | null>(null);
+  const [carLongitude, setCarLongitude] = useState<number | null>(null);
+  const [carTime, setCarTime] = useState('---');
+
+  const [locationStatus, setLocationStatus] = useState(
+    'Pobieram lokalizację użytkownika...'
+  );
+  const [sendStatus, setSendStatus] = useState(
+    'Pozycja użytkownika nie została jeszcze wysłana.'
+  );
+  const [carStatus, setCarStatus] = useState('Pobieram lokalizację auta...');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    refreshLocations();
+  }, []);
+
+  async function refreshLocations() {
+    setIsRefreshing(true);
+
+    await getCurrentLocation();
+    await getCarLocation();
+
+    setIsRefreshing(false);
+  }
+
+  async function getCurrentLocation() {
+    const permission = await Location.requestForegroundPermissionsAsync();
+
+    if (permission.status !== 'granted') {
+      setLocationStatus('Brak zgody na lokalizację.');
+      return;
+    }
+
+    setLocationStatus('Pobieram lokalizację użytkownika...');
+
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
+
+    const currentLatitude = location.coords.latitude;
+    const currentLongitude = location.coords.longitude;
+
+    setUserLatitude(currentLatitude);
+    setUserLongitude(currentLongitude);
+    setLocationStatus('Lokalizacja użytkownika pobrana.');
+
+    await sendUserLocation(currentLatitude, currentLongitude);
+  }
+
+  async function sendUserLocation(latitude: number, longitude: number) {
+    if (!API_KEY) {
+      setSendStatus('Brak API key w konfiguracji aplikacji.');
+      return;
+    }
+
+    try {
+      setSendStatus('Wysyłam pozycję użytkownika do backendu...');
+
+      const response = await fetch(`${API_URL}/upload_user_position`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_KEY,
+        },
+        body: JSON.stringify({
+          latitude: latitude,
+          longitude: longitude,
+        }),
+      });
+
+      if (!response.ok) {
+        setSendStatus('Nie udało się wysłać pozycji użytkownika.');
+        return;
+      }
+
+      setSendStatus('Pozycja użytkownika wysłana do backendu.');
+    } catch (error) {
+      setSendStatus('Błąd połączenia z backendem.');
+    }
+  }
+
+  async function getCarLocation() {
+    try {
+      setCarStatus('Pobieram lokalizację auta...');
+
+      const response = await fetch(`${API_URL}/location`);
+
+      if (!response.ok) {
+        setCarStatus('Nie udało się pobrać lokalizacji auta.');
+        return;
+      }
+
+      const data = await response.json();
+
+      setCarLatitude(data.lat);
+      setCarLongitude(data.lon);
+      setCarTime(data.time);
+      setCarStatus('Lokalizacja auta pobrana.');
+    } catch (error) {
+      setCarStatus('Błąd połączenia przy pobieraniu lokalizacji auta.');
+    }
+  }
+
   function handleLogout() {
     router.replace('/');
   }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Jesteś zalogowany</Text>
-      <Text style={styles.subtitle}>To będzie ekran mapy auta.</Text>
+      <Text style={styles.title}>CarTracker</Text>
+      <Text style={styles.subtitle}>Lokalizacja użytkownika i auta</Text>
 
-      <TouchableOpacity style={styles.button} onPress={handleLogout}>
+      <View style={styles.locationBox}>
+        <Text style={styles.boxTitle}>Twoja lokalizacja</Text>
+
+        <Text style={styles.status}>{locationStatus}</Text>
+        <Text style={styles.status}>{sendStatus}</Text>
+
+        <Text style={styles.label}>Latitude</Text>
+        <Text style={styles.value}>
+          {userLatitude !== null ? userLatitude : '---'}
+        </Text>
+
+        <Text style={styles.label}>Longitude</Text>
+        <Text style={styles.value}>
+          {userLongitude !== null ? userLongitude : '---'}
+        </Text>
+      </View>
+
+      <View style={styles.locationBox}>
+        <Text style={styles.boxTitle}>Lokalizacja auta</Text>
+
+        <Text style={styles.status}>{carStatus}</Text>
+
+        <Text style={styles.label}>Ostatnia aktualizacja</Text>
+        <Text style={styles.value}>{carTime}</Text>
+
+        <Text style={styles.label}>Latitude</Text>
+        <Text style={styles.value}>
+          {carLatitude !== null ? carLatitude : '---'}
+        </Text>
+
+        <Text style={styles.label}>Longitude</Text>
+        <Text style={styles.value}>
+          {carLongitude !== null ? carLongitude : '---'}
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.button, isRefreshing && styles.buttonDisabled]}
+        onPress={refreshLocations}
+        disabled={isRefreshing}
+      >
+        <Text style={styles.buttonText}>
+          {isRefreshing ? 'Odświeżam...' : 'Odśwież lokalizację'}
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Text style={styles.buttonText}>Wyloguj</Text>
       </TouchableOpacity>
     </View>
@@ -36,8 +194,44 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#6b7280',
-    marginBottom: 28,
+    marginBottom: 16,
     textAlign: 'center',
+  },
+  locationBox: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  boxTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  status: {
+    fontSize: 13,
+    color: '#374151',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  label: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  value: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 12,
   },
   button: {
     width: '100%',
@@ -47,6 +241,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 6,
     alignItems: 'center',
+  },
+  logoutButton: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#4b5563',
+    padding: 15,
+    borderRadius: 12,
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   buttonText: {
     color: '#ffffff',
