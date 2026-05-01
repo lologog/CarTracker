@@ -1,7 +1,13 @@
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 
 const API_URL = 'http://85.215.210.57';
@@ -138,7 +144,11 @@ export default function Home() {
         };
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+    >
       <Text style={styles.title}>CarTracker</Text>
       <Text style={styles.subtitle}>Mapa użytkownika i auta</Text>
 
@@ -217,16 +227,19 @@ export default function Home() {
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Text style={styles.buttonText}>Wyloguj</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
+    backgroundColor: '#f3f4f6',
+  },
+  container: {
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#f3f4f6',
+    paddingBottom: 32,
   },
   title: {
     fontSize: 30,
