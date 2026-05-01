@@ -38,6 +38,7 @@ templates = Jinja2Templates(directory="templates")
 
 load_dotenv()
 CSV_FILE = "dane.csv"
+USER_CSV_FILE = "user_position.csv"
 
 API_KEY_NAME = "x-api-key"  
 API_KEY_SECRET = os.getenv("API_KEY")
@@ -137,6 +138,21 @@ async def save_position(data: Position):
     })
 
     return {"message": "Data saved correctly", "saved_data": data}
+
+@app.post("/upload_user_position", dependencies=[Depends(get_api_key)])
+async def save_user_position(data: Position):
+
+    server_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    file_exists = os.path.isfile(USER_CSV_FILE)
+
+    with open(USER_CSV_FILE, mode='a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["timestamp", "latitude", "longitude"])
+        writer.writerow([server_timestamp, data.latitude, data.longitude])
+
+    return {"message": "User position saved correctly", "saved_data": data}
 
 @app.get("/healthcheck")
 def health_check():
