@@ -1,10 +1,19 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function Home() {
+  function handleLogout() {
+    router.replace('/');
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Jesteś zalogowany</Text>
       <Text style={styles.subtitle}>To będzie ekran mapy auta.</Text>
+
+      <TouchableOpacity style={styles.button} onPress={handleLogout}>
+        <Text style={styles.buttonText}>Wyloguj</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -27,6 +36,21 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#6b7280',
+    marginBottom: 28,
     textAlign: 'center',
+  },
+  button: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#111827',
+    padding: 15,
+    borderRadius: 12,
+    marginTop: 6,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
