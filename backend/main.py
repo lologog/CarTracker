@@ -66,9 +66,14 @@ def get_current_user(credentials: HTTPBasicCredentials = Depends(security_basic)
             headers={"WWW-Authenticate": "Basic"},
         )
     return credentials.username
+
 class Position(BaseModel):
     longitude: float
     latitude: float
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 def get_last_location():
     if not os.path.exists(CSV_FILE):
@@ -94,6 +99,25 @@ async def read_root(request: Request, user: str = Depends(get_current_user)):
 async def api_location():
     return get_last_location()
 
+@app.post("/login")
+async def login(data: LoginRequest):
+    if not USER or not PASSWD:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Dashboard login is not configured"
+        )
+
+    correct_username = secrets.compare_digest(data.username, USER)
+    correct_password = secrets.compare_digest(data.password, PASSWD)
+
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect login or password"
+        )
+
+    return {"message": "Login successful"}
+
 @app.post("/upload_position", dependencies=[Depends(get_api_key)])
 async def save_position(data: Position):
 
@@ -113,6 +137,7 @@ async def save_position(data: Position):
     })
 
     return {"message": "Data saved correctly", "saved_data": data}
+
 @app.get("/healthcheck")
 def health_check():
     return {"status": "OK", "service": "Position API"}
