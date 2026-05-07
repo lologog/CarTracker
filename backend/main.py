@@ -1,8 +1,9 @@
 import csv
 import os
-import secrets  
+import secrets
 import asyncio
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from fastapi import FastAPI, Depends, HTTPException, status, Security, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,8 +11,12 @@ from fastapi.templating import Jinja2Templates
 from fastapi.security import APIKeyHeader, HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from influxdb_client import InfluxDBClient, Point
+from influxdb_client.client.write_api import SYNCHRONOUS
 
-
+logger = logging.getLogger(__name__)
+logging.basicConfig(filename='tracker-app.log', level=logging.INFO, format="%(levelname)s:%(name)s:%(asctime)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S")
 app = FastAPI(docs_url=None, redoc_url=None)
 
 class ConnectionManager:
@@ -30,7 +35,7 @@ class ConnectionManager:
             try:
                 await connection.send_json(message)
             except:
-                pass 
+                pass
 
 security_basic=HTTPBasic()
 manager = ConnectionManager()
@@ -40,11 +45,20 @@ load_dotenv()
 CSV_FILE = "dane.csv"
 USER_CSV_FILE = "user_position.csv"
 
-API_KEY_NAME = "x-api-key"  
+API_KEY_NAME = "x-api-key"
 API_KEY_SECRET = os.getenv("API_KEY")
 
 USER = os.getenv("DASH_USER")
 PASSWD = os.getenv("DASH_PASSWD")
+
+INFLUXDB_URL=os.getenv("INFLUXDB_URL")
+INFLUXDB_TOKEN=os.getenv("INFLUXDB_TOKEN")
+INFLUXDB_ORG=os.getenv("INFLUXDB_ORG")
+INFLUXDB_BUCKET=os.getenv("INFLUXDB_BUCKET")
+
+client = InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG)
+write_api = client.write_api(write_options=SYNCHRONOUS)
+
 
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
@@ -56,7 +70,7 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="ACCESS DENIED: Wrong or empty API key!"
         )
-        
+
 def get_current_user(credentials: HTTPBasicCredentials = Depends(security_basic)):
     correct_username = secrets.compare_digest(credentials.username, USER)
     correct_password = secrets.compare_digest(credentials.password, PASSWD)
@@ -76,21 +90,35 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+
+from influxdb_client.client.query_api import QueryApi
+
+
 def get_last_location():
-    if not os.path.exists(CSV_FILE):
-        return {"lat": 0, "lon": 0, "time": "No data"}
-    
-    with open(CSV_FILE, 'r') as f:
-        lines = f.readlines()
-        if len(lines) < 1:
-            return {"lat": 0, "lon": 0, "time": "Empty File"}
-        
-        last_line = lines[-1].strip().split(',')
-        return {
-            "time": last_line[0],
-            "lat": float(last_line[1]),
-            "lon": float(last_line[2])
-        }
+    query_api = client.query_api()
+    flux_query = f'''
+        from(bucket: "{INFLUXDB_BUCKET}")
+            |> range(start: -7d)
+            |> filter(fn: (r) => r["_measurement"] == "device_positions")
+            |> last()
+            |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+    '''
+
+    try:
+        result = query_api.query(org=INFLUXDB_ORG, query=flux_query)
+
+        for table in result:
+            for record in table.records:
+                return {
+                    "time": record.get_time().strftime("%Y-%m-%d %H:%M:%S"),
+                    "lat": record.values.get("latitude"),
+                    "lon": record.values.get("longitude")
+                }
+        return {"lat": 0, "lon": 0, "time": "No data in selected range"}
+
+    except Exception as e:
+        logger.error(f"Error querying InfluxDB: {e}")
+        return {"lat": 0, "lon": 0, "time": "Database Error"}
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request, user: str = Depends(get_current_user)):
@@ -122,22 +150,27 @@ async def login(data: LoginRequest):
 @app.post("/upload_position", dependencies=[Depends(get_api_key)])
 async def save_position(data: Position):
 
-    server_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    server_timestamp = datetime.now(timezone.utc)
 
-    file_exists = os.path.isfile(CSV_FILE)
-
-    with open(CSV_FILE, mode='a', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow(["timestamp", "latitude", "longitude"])
-        writer.writerow([server_timestamp, data.latitude, data.longitude])
+    point = Point("device_positions") \
+        .tag("device_id", "test_device") \
+        .field("latitude", float(data.latitude)) \
+        .field("longitude", float(data.longitude)) \
+        .time(server_timestamp)
+    try:
+        # Próba zapisu do InfluxDB
+        write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=point)
+    except Exception as e:
+        logger.error(e)
+        print(f"BŁĄD INFLUXDB: {e}. Dane zapisano lokalnie.")
     await manager.broadcast({
         "time": server_timestamp,
         "lat": data.latitude,
         "lon": data.longitude
     })
-
+    logger.info(f"Data saved correctly: %s", data)
     return {"message": "Data saved correctly", "saved_data": data}
+
 
 @app.post("/upload_user_position", dependencies=[Depends(get_api_key)])
 async def save_user_position(data: Position):
@@ -156,14 +189,20 @@ async def save_user_position(data: Position):
 
 @app.get("/healthcheck")
 def health_check():
-    return {"status": "OK", "service": "Position API"}
+    influx_status = "Unhealthy"
+    try:
+        if client.ping():
+            influx_status = "Healthy"
+    except:
+        pass
+    return {"status": "OK","database": influx_status, "service": "Position API"}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            await asyncio.sleep(10) 
-            await websocket.receive_text() 
+            await asyncio.sleep(10)
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
