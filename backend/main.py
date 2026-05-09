@@ -176,7 +176,7 @@ async def save_position(data: Position, device_type: str = "car"):
         logger.error(f"Undisclosed saving error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
     await manager.broadcast({
-        "time": server_timestamp,
+        "time": server_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         "device_type": device_type,
         "lat": data.latitude,
         "lon": data.longitude
@@ -200,7 +200,7 @@ async def save_user_position(data: Position):
         print(f"InfluxDB ERROR: {e}")
 
     await manager.broadcast({
-        "time": server_timestamp,
+        "time": server_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
         "device_type": " user",
         "lat": data.latitude,
         "lon": data.longitude
