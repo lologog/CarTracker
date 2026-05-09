@@ -4,6 +4,7 @@ import secrets
 import asyncio
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Depends, HTTPException, status, Security, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+from influxdb_client.client.exceptions import InfluxDBError
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(filename='tracker-app.log', level=logging.INFO, format="%(levelname)s:%(name)s:%(asctime)s %(message)s",
@@ -100,6 +102,7 @@ def get_last_location():
         from(bucket: "{INFLUXDB_BUCKET}")
             |> range(start: -7d)
             |> filter(fn: (r) => r["_measurement"] == "device_positions")
+            |> filter(fn: (r) => r["device_type"] == "car")
             |> last()
             |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
     '''
@@ -109,10 +112,14 @@ def get_last_location():
 
         for table in result:
             for record in table.records:
+                utc_time = record.get_time()
+
+                local_time = utc_time.astimezone(ZoneInfo("Europe/Warsaw"))
                 return {
-                    "time": record.get_time().strftime("%Y-%m-%d %H:%M:%S"),
+                    "time": local_time.strftime("%Y-%m-%d %H:%M:%S"),
                     "lat": record.values.get("latitude"),
-                    "lon": record.values.get("longitude")
+                    "lon": record.values.get("longitude"),
+                    "device_type": record.values.get("device_type")
                 }
         return {"lat": 0, "lon": 0, "time": "No data in selected range"}
 
@@ -148,23 +155,29 @@ async def login(data: LoginRequest):
     return {"message": "Login successful"}
 
 @app.post("/upload_position", dependencies=[Depends(get_api_key)])
-async def save_position(data: Position):
+async def save_position(data: Position, device_type: str = "car"):
 
-    server_timestamp = datetime.now(timezone.utc)
+    server_timestamp = datetime.now(ZoneInfo("Europe/Warsaw"))
 
     point = Point("device_positions") \
-        .tag("device_id", "test_device") \
+        .tag("device_type", device_type) \
         .field("latitude", float(data.latitude)) \
         .field("longitude", float(data.longitude)) \
         .time(server_timestamp)
     try:
-        # Próba zapisu do InfluxDB
+
         write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=point)
+    except InfluxDBError as e:
+        error_code = e.status if hasattr(e, 'status') else 500
+        logger.error(f"InfluxDB error {error_code}: {e}")
+        raise HTTPException(status_code=error_code, detail=str(e))
     except Exception as e:
-        logger.error(e)
-        print(f"BŁĄD INFLUXDB: {e}. Dane zapisano lokalnie.")
+
+        logger.error(f"Undisclosed saving error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
     await manager.broadcast({
         "time": server_timestamp,
+        "device_type": device_type,
         "lat": data.latitude,
         "lon": data.longitude
     })
@@ -174,17 +187,25 @@ async def save_position(data: Position):
 
 @app.post("/upload_user_position", dependencies=[Depends(get_api_key)])
 async def save_user_position(data: Position):
+    server_timestamp = datetime.now(ZoneInfo("Europe/Warsaw"))
+    point = Point("device_positions") \
+        .tag("device_type", "user") \
+        .field("latitude", float(data.latitude)) \
+        .field("longitude", float(data.longitude)) \
+        .time(server_timestamp)
+    try:
+        write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=point)
+    except Exception as e:
+        logger.error(e)
+        print(f"InfluxDB ERROR: {e}")
 
-    server_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    file_exists = os.path.isfile(USER_CSV_FILE)
-
-    with open(USER_CSV_FILE, mode='a', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow(["timestamp", "latitude", "longitude"])
-        writer.writerow([server_timestamp, data.latitude, data.longitude])
-
+    await manager.broadcast({
+        "time": server_timestamp,
+        "device_type": " user",
+        "lat": data.latitude,
+        "lon": data.longitude
+    })
+    logger.info(f"User position saved correctly: %s", data)
     return {"message": "User position saved correctly", "saved_data": data}
 
 @app.get("/healthcheck")
