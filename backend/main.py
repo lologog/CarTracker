@@ -127,6 +127,37 @@ def get_last_location():
         logger.error(f"Error querying InfluxDB: {e}")
         return {"lat": 0, "lon": 0, "time": "Database Error"}
 
+
+def get_last_user_location():
+    query_api = client.query_api()
+    flux_query = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r["_measurement"] == "device_positions")
+  |> filter(fn: (r) => r["device_type"] == "user")
+  |> last()
+  |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+'''
+    try:
+        result = query_api.query(org=INFLUXDB_ORG, query=flux_query)
+        for table in result:
+            for record in table.records:
+                local_time = record.get_time().astimezone(ZoneInfo("Europe/Warsaw"))
+                return {
+                    "time": local_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "lat": record.values.get("latitude"),
+                    "lon": record.values.get("longitude"),
+                    "device_type": "user"
+                }
+        return {"lat": 0, "lon": 0, "time": "No data in selected range"}
+    except Exception as e:
+        logger.error(f"Error querying InfluxDB (user): {e}")
+        return {"lat": 0, "lon": 0, "time": "Database Error"}
+
+@app.get("/user_location")
+async def api_user_location():
+    return get_last_user_location()
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request, user: str = Depends(get_current_user)):
     return templates.TemplateResponse("index.html", {"request": request})
@@ -197,11 +228,11 @@ async def save_user_position(data: Position):
         write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=point)
     except Exception as e:
         logger.error(e)
-        print(f"InfluxDB ERROR: {e}")
+        print(f"InfluxDB ERROR : {e}")
 
     await manager.broadcast({
         "time": server_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-        "device_type": " user",
+        "device_type": "user",
         "lat": data.latitude,
         "lon": data.longitude
     })
