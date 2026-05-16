@@ -398,9 +398,9 @@ export default function Home() {
         <Text style={styles.label}>Ostatnia aktualizacja (InfluxDB)</Text>
         <Text style={styles.value}>{userTime}</Text>
         <Text style={styles.label}>Latitude</Text>
-        <Text style={styles.value}>{userLatitude  !== null ? userLatitude.toFixed(6)  : '---'}</Text>
+        <Text style={styles.value}>{userLatitude  !== null ? userLatitude.toFixed(3)  : '---'}</Text>
         <Text style={styles.label}>Longitude</Text>
-        <Text style={styles.value}>{userLongitude !== null ? userLongitude.toFixed(6) : '---'}</Text>
+        <Text style={styles.value}>{userLongitude !== null ? userLongitude.toFixed(3) : '---'}</Text>
       </View>
 
       {/* Car location box */}
@@ -409,9 +409,9 @@ export default function Home() {
         <Text style={styles.label}>Ostatnia aktualizacja (InfluxDB)</Text>
         <Text style={styles.value}>{carTime}</Text>
         <Text style={styles.label}>Latitude</Text>
-        <Text style={styles.value}>{carLatitude  !== null ? carLatitude.toFixed(6)  : '---'}</Text>
+        <Text style={styles.value}>{carLatitude  !== null ? carLatitude.toFixed(3)  : '---'}</Text>
         <Text style={styles.label}>Longitude</Text>
-        <Text style={styles.value}>{carLongitude !== null ? carLongitude.toFixed(6) : '---'}</Text>
+        <Text style={styles.value}>{carLongitude !== null ? carLongitude.toFixed(3) : '---'}</Text>
       </View>
 
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
