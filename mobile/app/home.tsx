@@ -10,6 +10,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useColorScheme,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 
@@ -92,55 +93,115 @@ async function sendCarMovingNotification(distanceMetres: number) {
   });
 }
 
+// ─── Theme tokens ────────────────────────────────────────────────────────────
+const LIGHT = {
+  bg:           '#f3f4f6',
+  surface:      '#ffffff',
+  border:       '#d1d5db',
+  divider:      '#e5e7eb',
+  text:         '#111827',
+  textMuted:    '#6b7280',
+  textFaint:    '#9ca3af',
+  textStatus:   '#374151',
+  mapStyle:     [] as object[],
+};
+
+const DARK = {
+  bg:           '#0f172a',
+  surface:      '#1e293b',
+  border:       '#334155',
+  divider:      '#334155',
+  text:         '#f1f5f9',
+  textMuted:    '#94a3b8',
+  textFaint:    '#64748b',
+  textStatus:   '#cbd5e1',
+  mapStyle: [
+    { elementType: 'geometry',            stylers: [{ color: '#1e293b' }] },
+    { elementType: 'labels.text.fill',    stylers: [{ color: '#94a3b8' }] },
+    { elementType: 'labels.text.stroke',  stylers: [{ color: '#0f172a' }] },
+    { featureType: 'road',                elementType: 'geometry',           stylers: [{ color: '#334155' }] },
+    { featureType: 'road',                elementType: 'geometry.stroke',    stylers: [{ color: '#0f172a' }] },
+    { featureType: 'water',               elementType: 'geometry',           stylers: [{ color: '#0f172a' }] },
+    { featureType: 'poi',                 elementType: 'geometry',           stylers: [{ color: '#1e293b' }] },
+    { featureType: 'transit',             elementType: 'geometry',           stylers: [{ color: '#1e293b' }] },
+    { featureType: 'administrative',      elementType: 'geometry',           stylers: [{ color: '#334155' }] },
+    { featureType: 'landscape',           elementType: 'geometry',           stylers: [{ color: '#172033' }] },
+  ],
+};
+
+// ─── Sun icon (light mode indicator) ────────────────────────────────────────
+function SunIcon({ color }: { color: string }) {
+  return (
+    <View style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
+      {/* Centre circle */}
+      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
+      {/* 8 rays */}
+      {[0,45,90,135,180,225,270,315].map((deg) => {
+        const rad = (deg * Math.PI) / 180;
+        const x = Math.round(Math.cos(rad) * 9);
+        const y = Math.round(Math.sin(rad) * 9);
+        return (
+          <View key={deg} style={{
+            position: 'absolute',
+            width: 3, height: 3, borderRadius: 1.5,
+            backgroundColor: color,
+            left: 11 + x - 1.5,
+            top:  11 + y - 1.5,
+          }} />
+        );
+      })}
+    </View>
+  );
+}
+
+// ─── Moon icon (dark mode indicator) ────────────────────────────────────────
+function MoonIcon({ color }: { color: string }) {
+  return (
+    <View style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ fontSize: 16, color, lineHeight: 22 }}>☽</Text>
+    </View>
+  );
+}
+
 // ─── Collapsible location box ────────────────────────────────────────────────
+type Theme = typeof LIGHT;
 type LocationBoxProps = {
   title:       string;
   latitude:    number | null;
   longitude:   number | null;
   lastUpdate:  string;
-  statusLines: string[];   // extra status strings shown when expanded
+  statusLines: string[];
+  theme:       Theme;
 };
 
-function LocationBox({ title, latitude, longitude, lastUpdate, statusLines }: LocationBoxProps) {
+function LocationBox({ title, latitude, longitude, lastUpdate, statusLines, theme }: LocationBoxProps) {
   const [expanded, setExpanded] = useState(false);
+  const s = locationBoxStyles(theme);
 
   return (
-    <TouchableOpacity
-      style={styles.locationBox}
-      onPress={() => setExpanded((v) => !v)}
-      activeOpacity={0.85}
-    >
-      {/* ── Always-visible header ── */}
-      <View style={styles.locationBoxHeader}>
-        <Text style={styles.boxTitle}>{title}</Text>
-        <Text style={styles.expandChevron}>{expanded ? '▲' : '▼'}</Text>
+    <TouchableOpacity style={s.box} onPress={() => setExpanded((v) => !v)} activeOpacity={0.85}>
+      <View style={s.header}>
+        <Text style={s.boxTitle}>{title}</Text>
+        <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
       </View>
-
-      {/* ── Always-visible coords ── */}
-      <View style={styles.coordRow}>
-        <View style={styles.coordItem}>
-          <Text style={styles.label}>Latitude</Text>
-          <Text style={styles.value}>
-            {latitude !== null ? latitude.toFixed(3) : '---'}
-          </Text>
+      <View style={s.coordRow}>
+        <View style={s.coordItem}>
+          <Text style={s.label}>Latitude</Text>
+          <Text style={s.value}>{latitude !== null ? latitude.toFixed(3) : '---'}</Text>
         </View>
-        <View style={styles.coordDivider} />
-        <View style={styles.coordItem}>
-          <Text style={styles.label}>Longitude</Text>
-          <Text style={styles.value}>
-            {longitude !== null ? longitude.toFixed(3) : '---'}
-          </Text>
+        <View style={s.divider} />
+        <View style={s.coordItem}>
+          <Text style={s.label}>Longitude</Text>
+          <Text style={s.value}>{longitude !== null ? longitude.toFixed(3) : '---'}</Text>
         </View>
       </View>
-
-      {/* ── Collapsible details ── */}
       {expanded && (
-        <View style={styles.expandedSection}>
-          <View style={styles.expandedDivider} />
-          <Text style={styles.label}>Ostatnia aktualizacja InfluxDB</Text>
-          <Text style={styles.value}>{lastUpdate}</Text>
+        <View style={s.expandedSection}>
+          <View style={s.expandedDivider} />
+          <Text style={s.label}>Ostatnia aktualizacja InfluxDB</Text>
+          <Text style={s.value}>{lastUpdate}</Text>
           {statusLines.map((line, i) => (
-            <Text key={i} style={styles.status}>{line}</Text>
+            <Text key={i} style={s.status}>{line}</Text>
           ))}
         </View>
       )}
@@ -148,9 +209,30 @@ function LocationBox({ title, latitude, longitude, lastUpdate, statusLines }: Lo
   );
 }
 
+function locationBoxStyles(t: Theme) {
+  return StyleSheet.create({
+    box:             { width: '100%', maxWidth: 420, backgroundColor: t.surface, borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: t.border },
+    header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+    boxTitle:        { fontSize: 16, fontWeight: '800', color: t.text },
+    chevron:         { fontSize: 13, color: t.textFaint },
+    coordRow:        { flexDirection: 'row', alignItems: 'center' },
+    coordItem:       { flex: 1, alignItems: 'center' },
+    divider:         { width: 1, height: 36, backgroundColor: t.divider, marginHorizontal: 8 },
+    expandedSection: { marginTop: 10 },
+    expandedDivider: { height: 1, backgroundColor: t.divider, marginBottom: 10 },
+    label:           { fontSize: 13, color: t.textMuted, textAlign: 'center', marginBottom: 2 },
+    value:           { fontSize: 14, fontWeight: '700', color: t.text, textAlign: 'center', marginBottom: 4 },
+    status:          { fontSize: 12, color: t.textStatus, marginBottom: 4, textAlign: 'center' },
+  });
+}
+
 type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 export default function Home() {
+  const systemScheme = useColorScheme();
+  const [isDark, setIsDark] = useState(systemScheme === 'dark');
+  const theme = isDark ? DARK : LIGHT;
+
   const [userLatitude, setUserLatitude]   = useState<number | null>(null);
   const [userLongitude, setUserLongitude] = useState<number | null>(null);
   const [userTime, setUserTime]           = useState('---');
@@ -187,9 +269,7 @@ export default function Home() {
   }, [userLatitude, userLongitude, carLatitude, carLongitude]);
 
   useEffect(() => {
-    registerForNotifications().then((granted) => {
-      notifEnabledRef.current = granted;
-    });
+    registerForNotifications().then((granted) => { notifEnabledRef.current = granted; });
     seedFromInflux();
     startUserLocationWatch();
     connectWebSocket();
@@ -247,11 +327,7 @@ export default function Home() {
     setWsStatus('connecting');
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
-
-    ws.onopen = () => {
-      setWsStatus('connected');
-      retryDelayRef.current = 2000;
-    };
+    ws.onopen = () => { setWsStatus('connected'); retryDelayRef.current = 2000; };
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data) as {
@@ -309,9 +385,7 @@ export default function Home() {
         body: JSON.stringify({ latitude, longitude }),
       });
       setSendStatus(res.ok ? 'Pozycja wysłana → InfluxDB.' : 'Nie udało się wysłać pozycji użytkownika.');
-    } catch {
-      setSendStatus('Błąd połączenia z backendem.');
-    }
+    } catch { setSendStatus('Błąd połączenia z backendem.'); }
   }
 
   async function handleShowRoute() {
@@ -322,9 +396,7 @@ export default function Home() {
       setRouteCoords(await fetchOSRMRoute(userLatitude, userLongitude, carLatitude, carLongitude));
     } catch {
       Alert.alert('Błąd', 'Nie udało się pobrać trasy. Sprawdź połączenie.');
-    } finally {
-      setIsLoadingRoute(false);
-    }
+    } finally { setIsLoadingRoute(false); }
   }
 
   function focusMap(lat: number, lon: number) {
@@ -356,142 +428,148 @@ export default function Home() {
     error:        '🔴 Błąd WebSocket',
   };
 
+  const t = theme;
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <Text style={styles.title}>CarTracker</Text>
-      <Text style={styles.subtitle}>Mapa użytkownika i auta</Text>
-      <Text style={styles.wsStatus}>{wsStatusLabel[wsStatus]}</Text>
-
-      <View style={styles.mapBox}>
-        <MapView ref={mapRef} style={styles.map} region={mapRegion}>
-          {hasUserLocation && (
-            <Marker coordinate={{ latitude: userLatitude!, longitude: userLongitude! }} title="Ty" pinColor="blue" />
-          )}
-          {hasCarLocation && (
-            <Marker coordinate={{ latitude: carLatitude!, longitude: carLongitude! }} title="Auto" pinColor="red" />
-          )}
-          {routeCoords.length > 0 && (
-            <Polyline coordinates={routeCoords} strokeColor="#1d4ed8" strokeWidth={4} />
-          )}
-        </MapView>
-      </View>
-
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
+      {/* ── Theme toggle — fixed top-left ─────────────────────────────────── */}
       <TouchableOpacity
-        style={[styles.button, styles.routeButton,
-          (!hasUserLocation || !hasCarLocation || isLoadingRoute) && styles.buttonDisabled]}
-        onPress={handleShowRoute}
-        disabled={!hasUserLocation || !hasCarLocation || isLoadingRoute}
+        onPress={() => setIsDark((v) => !v)}
+        style={{
+          position: 'absolute', top: 52, left: 16, zIndex: 10,
+          width: 40, height: 40, borderRadius: 20,
+          backgroundColor: t.surface,
+          borderWidth: 1, borderColor: t.border,
+          alignItems: 'center', justifyContent: 'center',
+          shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+          elevation: 4,
+        }}
+        accessibilityLabel={isDark ? 'Przełącz na tryb jasny' : 'Przełącz na tryb ciemny'}
       >
-        <Text style={styles.buttonText}>
-          {isLoadingRoute ? 'Pobieranie trasy...' : '🗺️ Pokaż trasę'}
-        </Text>
+        {isDark
+          ? <SunIcon  color={t.text} />
+          : <MoonIcon color={t.text} />
+        }
       </TouchableOpacity>
 
-      <View style={styles.distanceBox}>
-        <Text style={styles.distanceLabel}>📍 Odległość od auta</Text>
-        <Text style={[styles.distanceValue,
-          distanceToCarMetres !== null && distanceToCarMetres <= 15 && styles.distanceNear]}>
-          {distanceToCarMetres !== null ? formatDistance(distanceToCarMetres) : '---'}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ alignItems: 'center', padding: 16, paddingBottom: 32 }}
+      >
+        <Text style={{ fontSize: 30, fontWeight: '800', color: t.text, marginTop: 28, marginBottom: 4, textAlign: 'center' }}>
+          CarTracker
         </Text>
-      </View>
+        <Text style={{ fontSize: 15, color: t.textMuted, marginBottom: 4, textAlign: 'center' }}>
+          Mapa użytkownika i auta
+        </Text>
+        <Text style={{ fontSize: 12, color: t.textMuted, marginBottom: 12, textAlign: 'center' }}>
+          {wsStatusLabel[wsStatus]}
+        </Text>
 
-      <View style={styles.focusRow}>
+        {/* ── Map ──────────────────────────────────────────────────────────── */}
+        <View style={{
+          width: '100%', maxWidth: 420, height: 260, borderRadius: 16,
+          overflow: 'hidden', marginBottom: 12,
+          borderWidth: 1, borderColor: t.border, backgroundColor: t.surface,
+        }}>
+          <MapView
+            ref={mapRef}
+            style={{ width: '100%', height: '100%' }}
+            region={mapRegion}
+            customMapStyle={t.mapStyle}
+          >
+            {hasUserLocation && (
+              <Marker coordinate={{ latitude: userLatitude!, longitude: userLongitude! }} title="Ty" pinColor="blue" />
+            )}
+            {hasCarLocation && (
+              <Marker coordinate={{ latitude: carLatitude!, longitude: carLongitude! }} title="Auto" pinColor="red" />
+            )}
+            {routeCoords.length > 0 && (
+              <Polyline coordinates={routeCoords} strokeColor="#1d4ed8" strokeWidth={4} />
+            )}
+          </MapView>
+        </View>
+
+        {/* ── Route button ─────────────────────────────────────────────────── */}
         <TouchableOpacity
-          style={[styles.focusButton, styles.focusButtonCar, !hasCarLocation && styles.buttonDisabled]}
-          onPress={() => hasCarLocation && focusMap(carLatitude!, carLongitude!)}
-          disabled={!hasCarLocation}
+          style={[
+            { width: '100%', maxWidth: 420, backgroundColor: '#1d4ed8', padding: 14, borderRadius: 12, marginBottom: 10, alignItems: 'center' },
+            (!hasUserLocation || !hasCarLocation || isLoadingRoute) && { opacity: 0.6 },
+          ]}
+          onPress={handleShowRoute}
+          disabled={!hasUserLocation || !hasCarLocation || isLoadingRoute}
         >
-          <Text style={styles.focusButtonText}>🚗 Auto</Text>
+          <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>
+            {isLoadingRoute ? 'Pobieranie trasy...' : '🗺️ Pokaż trasę'}
+          </Text>
         </TouchableOpacity>
+
+        {/* ── Distance badge ───────────────────────────────────────────────── */}
+        <View style={{
+          width: '100%', maxWidth: 420, backgroundColor: t.surface, borderRadius: 12,
+          paddingVertical: 14, paddingHorizontal: 16, marginBottom: 8,
+          borderWidth: 1, borderColor: t.border,
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <Text style={{ fontSize: 14, color: t.textMuted, fontWeight: '600' }}>📍 Odległość od auta</Text>
+          <Text style={{
+            fontSize: 22, fontWeight: '800',
+            color: distanceToCarMetres !== null && distanceToCarMetres <= 15 ? '#16a34a' : t.text,
+          }}>
+            {distanceToCarMetres !== null ? formatDistance(distanceToCarMetres) : '---'}
+          </Text>
+        </View>
+
+        {/* ── Focus buttons ────────────────────────────────────────────────── */}
+        <View style={{ width: '100%', maxWidth: 420, flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+          <TouchableOpacity
+            style={[
+              { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, backgroundColor: isDark ? '#1e2d3d' : '#fef2f2', borderColor: isDark ? '#4a3030' : '#fca5a5' },
+              !hasCarLocation && { opacity: 0.6 },
+            ]}
+            onPress={() => hasCarLocation && focusMap(carLatitude!, carLongitude!)}
+            disabled={!hasCarLocation}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '700', color: t.text }}>🚗 Auto</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, backgroundColor: isDark ? '#1a2a3d' : '#eff6ff', borderColor: isDark ? '#2d4a6e' : '#93c5fd' },
+              !hasUserLocation && { opacity: 0.6 },
+            ]}
+            onPress={() => hasUserLocation && focusMap(userLatitude!, userLongitude!)}
+            disabled={!hasUserLocation}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '700', color: t.text }}>🧍 User</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Location boxes ───────────────────────────────────────────────── */}
+        <LocationBox
+          title="Twoja lokalizacja"
+          latitude={userLatitude}
+          longitude={userLongitude}
+          lastUpdate={userTime}
+          statusLines={[locationStatus, sendStatus]}
+          theme={theme}
+        />
+        <LocationBox
+          title="Lokalizacja auta"
+          latitude={carLatitude}
+          longitude={carLongitude}
+          lastUpdate={carTime}
+          statusLines={[]}
+          theme={theme}
+        />
+
+        {/* ── Logout ───────────────────────────────────────────────────────── */}
         <TouchableOpacity
-          style={[styles.focusButton, styles.focusButtonUser, !hasUserLocation && styles.buttonDisabled]}
-          onPress={() => hasUserLocation && focusMap(userLatitude!, userLongitude!)}
-          disabled={!hasUserLocation}
+          style={{ width: '100%', maxWidth: 420, backgroundColor: '#4b5563', padding: 14, borderRadius: 12, marginTop: 8, alignItems: 'center' }}
+          onPress={handleLogout}
         >
-          <Text style={styles.focusButtonText}>🧍 User</Text>
+          <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>Wyloguj</Text>
         </TouchableOpacity>
-      </View>
-
-      {/* ── Collapsible location boxes ──────────────────────────────────── */}
-      <LocationBox
-        title="Twoja lokalizacja"
-        latitude={userLatitude}
-        longitude={userLongitude}
-        lastUpdate={userTime}
-        statusLines={[locationStatus, sendStatus]}
-      />
-
-      <LocationBox
-        title="Lokalizacja auta"
-        latitude={carLatitude}
-        longitude={carLongitude}
-        lastUpdate={carTime}
-        statusLines={[]}
-      />
-
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.buttonText}>Wyloguj</Text>
-      </TouchableOpacity>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  screen:     { flex: 1, backgroundColor: '#f3f4f6' },
-  container:  { alignItems: 'center', padding: 16, paddingBottom: 32 },
-  title:      { fontSize: 30, fontWeight: '800', color: '#111827', marginTop: 28, marginBottom: 4, textAlign: 'center' },
-  subtitle:   { fontSize: 15, color: '#6b7280', marginBottom: 4, textAlign: 'center' },
-  wsStatus:   { fontSize: 12, color: '#6b7280', marginBottom: 12, textAlign: 'center' },
-  mapBox:     { width: '100%', maxWidth: 420, height: 260, borderRadius: 16, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#d1d5db', backgroundColor: '#ffffff' },
-  map:        { width: '100%', height: '100%' },
-
-  // ── Distance badge ──────────────────────────────────────────────────────
-  distanceBox: {
-    width: '100%', maxWidth: 420, backgroundColor: '#ffffff', borderRadius: 12,
-    paddingVertical: 14, paddingHorizontal: 16, marginBottom: 8,
-    borderWidth: 1, borderColor: '#d1d5db',
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-  },
-  distanceLabel: { fontSize: 14, color: '#6b7280', fontWeight: '600' },
-  distanceValue: { fontSize: 22, fontWeight: '800', color: '#111827' },
-  distanceNear:  { color: '#16a34a' },
-
-  // ── Focus buttons ───────────────────────────────────────────────────────
-  focusRow:        { width: '100%', maxWidth: 420, flexDirection: 'row', gap: 10, marginBottom: 10 },
-  focusButton:     { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1 },
-  focusButtonCar:  { backgroundColor: '#fef2f2', borderColor: '#fca5a5' },
-  focusButtonUser: { backgroundColor: '#eff6ff', borderColor: '#93c5fd' },
-  focusButtonText: { fontSize: 15, fontWeight: '700', color: '#111827' },
-
-  // ── Collapsible location box ────────────────────────────────────────────
-  locationBox: {
-    width: '100%', maxWidth: 420, backgroundColor: '#ffffff',
-    borderRadius: 12, padding: 12, marginBottom: 10,
-    borderWidth: 1, borderColor: '#d1d5db',
-  },
-  locationBoxHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  boxTitle:      { fontSize: 16, fontWeight: '800', color: '#111827' },
-  expandChevron: { fontSize: 13, color: '#9ca3af' },
-  coordRow: {
-    flexDirection: 'row', alignItems: 'center',
-  },
-  coordItem:    { flex: 1, alignItems: 'center' },
-  coordDivider: { width: 1, height: 36, backgroundColor: '#e5e7eb', marginHorizontal: 8 },
-  expandedSection: { marginTop: 10 },
-  expandedDivider: { height: 1, backgroundColor: '#e5e7eb', marginBottom: 10 },
-
-  // ── Shared text ─────────────────────────────────────────────────────────
-  status: { fontSize: 12, color: '#374151', marginBottom: 4, textAlign: 'center' },
-  label:  { fontSize: 13, color: '#6b7280', textAlign: 'center', marginBottom: 2 },
-  value:  { fontSize: 14, fontWeight: '700', color: '#111827', textAlign: 'center', marginBottom: 4 },
-
-  // ── Buttons ─────────────────────────────────────────────────────────────
-  button:         { width: '100%', maxWidth: 420, backgroundColor: '#111827', padding: 14, borderRadius: 12, marginTop: 2, alignItems: 'center' },
-  routeButton:    { backgroundColor: '#1d4ed8', marginBottom: 10 },
-  logoutButton:   { width: '100%', maxWidth: 420, backgroundColor: '#4b5563', padding: 14, borderRadius: 12, marginTop: 8, alignItems: 'center' },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText:     { color: '#ffffff', fontSize: 16, fontWeight: '700' },
-});
