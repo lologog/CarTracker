@@ -1,8 +1,10 @@
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,18 +13,22 @@ import {
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 
-const API_URL  = 'http://85.215.210.57';
-const WS_URL   = 'ws://85.215.210.57/ws';
-const API_KEY  = process.env.EXPO_PUBLIC_API_KEY;
+const API_URL = 'http://85.215.210.57';
+const WS_URL  = 'ws://85.215.210.57/ws';
+const API_KEY = process.env.EXPO_PUBLIC_API_KEY;
 
-// ─── Guard against the backend's "no data" sentinel ─────────────────────────
-// InfluxDB returns { lat: 0, lon: 0 } when there are no records in range.
-// Exact (0, 0) is in the Atlantic Ocean — treat it as "no data".
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge:  false,
+  }),
+});
+
 function isValidCoord(lat: number, lon: number): boolean {
   return !(lat === 0 && lon === 0);
 }
 
-// ─── Haversine distance (metres) ────────────────────────────────────────────
 function haversineDistance(
   lat1: number, lon1: number,
   lat2: number, lon2: number
@@ -37,16 +43,14 @@ function haversineDistance(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ─── Format metres ───────────────────────────────────────────────────────────
 function formatDistance(metres: number): string {
   if (metres < 1000) return `${Math.round(metres)} m`;
   return `${(metres / 1000).toFixed(2)} km`;
 }
 
-// ─── OSRM route fetcher (free, no API key) ───────────────────────────────────
 async function fetchOSRMRoute(
   fromLat: number, fromLon: number,
-  toLat:   number, toLon:   number
+  toLat: number,   toLon: number
 ): Promise<Array<{ latitude: number; longitude: number }>> {
   const url =
     `https://router.project-osrm.org/route/v1/driving/` +
@@ -61,56 +65,134 @@ async function fetchOSRMRoute(
   );
 }
 
-// ─── WebSocket connection status type ───────────────────────────────────────
+async function registerForNotifications(): Promise<boolean> {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('car-alerts', {
+      name:             'Car Alerts',
+      importance:       Notifications.AndroidImportance.HIGH,
+      sound:            'default',
+      vibrationPattern: [0, 250, 250, 250],
+    });
+  }
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  if (existing === 'granted') return true;
+  const { status } = await Notifications.requestPermissionsAsync();
+  return status === 'granted';
+}
+
+async function sendCarMovingNotification(distanceMetres: number) {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: '⚠️ UWAGA, AUTO W RUCHU',
+      body:  `Auto poruszyło się. Odległość od Ciebie: ${formatDistance(distanceMetres)}.`,
+      sound: 'default',
+      data:  { type: 'car_moving' },
+    },
+    trigger: null,
+  });
+}
+
+// ─── Collapsible location box ────────────────────────────────────────────────
+type LocationBoxProps = {
+  title:       string;
+  latitude:    number | null;
+  longitude:   number | null;
+  lastUpdate:  string;
+  statusLines: string[];   // extra status strings shown when expanded
+};
+
+function LocationBox({ title, latitude, longitude, lastUpdate, statusLines }: LocationBoxProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <TouchableOpacity
+      style={styles.locationBox}
+      onPress={() => setExpanded((v) => !v)}
+      activeOpacity={0.85}
+    >
+      {/* ── Always-visible header ── */}
+      <View style={styles.locationBoxHeader}>
+        <Text style={styles.boxTitle}>{title}</Text>
+        <Text style={styles.expandChevron}>{expanded ? '▲' : '▼'}</Text>
+      </View>
+
+      {/* ── Always-visible coords ── */}
+      <View style={styles.coordRow}>
+        <View style={styles.coordItem}>
+          <Text style={styles.label}>Latitude</Text>
+          <Text style={styles.value}>
+            {latitude !== null ? latitude.toFixed(3) : '---'}
+          </Text>
+        </View>
+        <View style={styles.coordDivider} />
+        <View style={styles.coordItem}>
+          <Text style={styles.label}>Longitude</Text>
+          <Text style={styles.value}>
+            {longitude !== null ? longitude.toFixed(3) : '---'}
+          </Text>
+        </View>
+      </View>
+
+      {/* ── Collapsible details ── */}
+      {expanded && (
+        <View style={styles.expandedSection}>
+          <View style={styles.expandedDivider} />
+          <Text style={styles.label}>Ostatnia aktualizacja InfluxDB</Text>
+          <Text style={styles.value}>{lastUpdate}</Text>
+          {statusLines.map((line, i) => (
+            <Text key={i} style={styles.status}>{line}</Text>
+          ))}
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
 type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 export default function Home() {
-  // ── Positions ──────────────────────────────────────────────────────────────
-  const [userLatitude,  setUserLatitude]  = useState<number | null>(null);
+  const [userLatitude, setUserLatitude]   = useState<number | null>(null);
   const [userLongitude, setUserLongitude] = useState<number | null>(null);
-  const [userTime,      setUserTime]      = useState('---');
+  const [userTime, setUserTime]           = useState('---');
 
-  const [carLatitude,  setCarLatitude]  = useState<number | null>(null);
+  const [carLatitude, setCarLatitude]   = useState<number | null>(null);
   const [carLongitude, setCarLongitude] = useState<number | null>(null);
-  const [carTime,      setCarTime]      = useState('---');
+  const [carTime, setCarTime]           = useState('---');
 
-  // ── Route ─────────────────────────────────────────────────────────────────
-  const [routeCoords,    setRouteCoords]    = useState<Array<{ latitude: number; longitude: number }>>([]);
+  const [routeCoords, setRouteCoords]       = useState<Array<{ latitude: number; longitude: number }>>([]);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
 
-  // ── Status strings ────────────────────────────────────────────────────────
   const [locationStatus, setLocationStatus] = useState('Pobieram lokalizację użytkownika...');
-  const [sendStatus,     setSendStatus]     = useState('Pozycja użytkownika nie została jeszcze wysłana.');
-  const [wsStatus,       setWsStatus]       = useState<WsStatus>('connecting');
+  const [sendStatus, setSendStatus]         = useState('Pozycja użytkownika nie została jeszcze wysłana.');
+  const [wsStatus, setWsStatus]             = useState<WsStatus>('connecting');
 
-  // ── Refs ──────────────────────────────────────────────────────────────────
-  const prevCarLatRef  = useRef<number | null>(null);
-  const prevCarLonRef  = useRef<number | null>(null);
-  const userLatRef     = useRef<number | null>(null);
-  const userLonRef     = useRef<number | null>(null);
-  const locationSubRef = useRef<Location.LocationSubscription | null>(null);
-  const wsRef          = useRef<WebSocket | null>(null);
-  const wsRetryRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const retryDelayRef  = useRef(2000); // exponential backoff start: 2 s
-  const mapRef         = useRef<MapView>(null);
+  const prevCarLatRef   = useRef<number | null>(null);
+  const prevCarLonRef   = useRef<number | null>(null);
+  const userLatRef      = useRef<number | null>(null);
+  const userLonRef      = useRef<number | null>(null);
+  const locationSubRef  = useRef<Location.LocationSubscription | null>(null);
+  const wsRef           = useRef<WebSocket | null>(null);
+  const wsRetryRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryDelayRef   = useRef(2000);
+  const mapRef          = useRef<MapView>(null);
+  const notifEnabledRef = useRef(false);
 
-  // Keep user coord refs current so WS/alert callbacks always see latest value
-  useEffect(() => { userLatRef.current = userLatitude; },  [userLatitude]);
+  useEffect(() => { userLatRef.current = userLatitude; }, [userLatitude]);
   useEffect(() => { userLonRef.current = userLongitude; }, [userLongitude]);
 
-  // ── Live distance (derived, no extra polling) ─────────────────────────────
   const distanceToCarMetres = useMemo<number | null>(() => {
     if (userLatitude === null || userLongitude === null ||
         carLatitude  === null || carLongitude  === null) return null;
     return haversineDistance(userLatitude, userLongitude, carLatitude, carLongitude);
   }, [userLatitude, userLongitude, carLatitude, carLongitude]);
 
-  // ── Mount ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    seedFromInflux();          // 1. load last known positions from InfluxDB
-    startUserLocationWatch();  // 2. start GPS subscription
-    connectWebSocket();        // 3. open WS for live server-push updates
-
+    registerForNotifications().then((granted) => {
+      notifEnabledRef.current = granted;
+    });
+    seedFromInflux();
+    startUserLocationWatch();
+    connectWebSocket();
     return () => {
       locationSubRef.current?.remove();
       wsRef.current?.close();
@@ -118,40 +200,29 @@ export default function Home() {
     };
   }, []);
 
-  // ── Step 1: seed both positions from InfluxDB via REST ───────────────────
-  // This ensures InfluxDB is the source of truth on startup, not the device GPS.
   async function seedFromInflux() {
     try {
-      // Car
       const carRes = await fetch(`${API_URL}/location`);
       if (carRes.ok) {
         const d = await carRes.json();
         if (isValidCoord(d.lat, d.lon)) {
-          setCarLatitude(d.lat);
-          setCarLongitude(d.lon);
+          setCarLatitude(d.lat);  setCarLongitude(d.lon);
           setCarTime(d.time ?? '---');
           prevCarLatRef.current = d.lat;
           prevCarLonRef.current = d.lon;
         }
       }
-      // User
       const userRes = await fetch(`${API_URL}/user_location`);
       if (userRes.ok) {
         const d = await userRes.json();
         if (isValidCoord(d.lat, d.lon)) {
-          setUserLatitude(d.lat);
-          setUserLongitude(d.lon);
+          setUserLatitude(d.lat);  setUserLongitude(d.lon);
           setUserTime(d.time ?? '---');
         }
       }
-    } catch {
-      // Seed failure is non-fatal — GPS and WS will populate positions shortly
-    }
+    } catch { /* non-fatal */ }
   }
 
-  // ── Step 2: GPS subscription — user position only ────────────────────────
-  // GPS updates the local state AND pushes to backend (which writes to InfluxDB).
-  // The WS broadcast from the backend then confirms the write back to all clients.
   async function startUserLocationWatch() {
     const permission = await Location.requestForegroundPermissionsAsync();
     if (permission.status !== 'granted') {
@@ -164,20 +235,14 @@ export default function Home() {
       async (location) => {
         const lat = location.coords.latitude;
         const lon = location.coords.longitude;
-        // Optimistically update UI immediately from GPS
-        setUserLatitude(lat);
-        setUserLongitude(lon);
+        setUserLatitude(lat);  setUserLongitude(lon);
         setLocationStatus('Lokalizacja użytkownika aktywna (GPS).');
         setRouteCoords([]);
-        // Push to backend → InfluxDB → WS broadcast confirms write
         await sendUserLocation(lat, lon);
       }
     );
   }
 
-  // ── Step 3: WebSocket — real-time push from server ────────────────────────
-  // Handles BOTH device_type:"car" and device_type:"user" broadcasts.
-  // This is the InfluxDB-confirmed position — it is superior to the GPS optimistic update.
   function connectWebSocket() {
     setWsStatus('connecting');
     const ws = new WebSocket(WS_URL);
@@ -185,40 +250,25 @@ export default function Home() {
 
     ws.onopen = () => {
       setWsStatus('connected');
-      retryDelayRef.current = 2000; // reset backoff on successful connect
+      retryDelayRef.current = 2000;
     };
-
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data) as {
-          device_type: 'car' | 'user';
-          lat: number;
-          lon: number;
-          time: string;
+          device_type: 'car' | 'user'; lat: number; lon: number; time: string;
         };
-
         if (!isValidCoord(msg.lat, msg.lon)) return;
-
         if (msg.device_type === 'car') {
           handleCarUpdate(msg.lat, msg.lon, msg.time);
         } else if (msg.device_type === 'user') {
-          // InfluxDB-confirmed user position — overrides GPS optimistic value
-          setUserLatitude(msg.lat);
-          setUserLongitude(msg.lon);
+          setUserLatitude(msg.lat);  setUserLongitude(msg.lon);
           setUserTime(msg.time);
           setLocationStatus('Lokalizacja użytkownika aktywna (InfluxDB).');
         }
-      } catch {
-        // Malformed message — ignore
-      }
+      } catch { /* malformed */ }
     };
-
-    ws.onerror = () => {
-      setWsStatus('error');
-    };
-
+    ws.onerror = () => setWsStatus('error');
     ws.onclose = () => {
-      // Auto-reconnect with exponential backoff (cap at 30 s)
       const delay = Math.min(retryDelayRef.current, 30000);
       retryDelayRef.current = delay * 2;
       setWsStatus('reconnecting');
@@ -226,36 +276,30 @@ export default function Home() {
     };
   }
 
-  // ── Car update handler (called from WS message) ───────────────────────────
   function handleCarUpdate(newLat: number, newLon: number, time: string) {
     const prevLat = prevCarLatRef.current;
     const prevLon = prevCarLonRef.current;
-
     if (prevLat !== null && prevLon !== null) {
       const carMoved = haversineDistance(prevLat, prevLon, newLat, newLon) > 1;
       if (carMoved) {
         const uLat = userLatRef.current;
         const uLon = userLonRef.current;
-        if (uLat !== null && uLon !== null &&
-            haversineDistance(uLat, uLon, newLat, newLon) > 15) {
-          Alert.alert(
-            '⚠️ UWAGA', 'UWAGA, AUTO W RUCHU',
-            [{ text: 'OK', style: 'destructive' }],
-            { cancelable: false }
-          );
+        if (uLat !== null && uLon !== null) {
+          const dist = haversineDistance(uLat, uLon, newLat, newLon);
+          if (dist > 15) {
+            Alert.alert('⚠️ UWAGA', 'UWAGA, AUTO W RUCHU',
+              [{ text: 'OK', style: 'destructive' }], { cancelable: false });
+            if (notifEnabledRef.current) sendCarMovingNotification(dist);
+          }
         }
-        setRouteCoords([]); // route is stale when car moves
+        setRouteCoords([]);
       }
     }
-
     prevCarLatRef.current = newLat;
     prevCarLonRef.current = newLon;
-    setCarLatitude(newLat);
-    setCarLongitude(newLon);
-    setCarTime(time);
+    setCarLatitude(newLat);  setCarLongitude(newLon);  setCarTime(time);
   }
 
-  // ── Send user position to backend → InfluxDB ─────────────────────────────
   async function sendUserLocation(latitude: number, longitude: number) {
     if (!API_KEY) { setSendStatus('Brak API key w konfiguracji aplikacji.'); return; }
     try {
@@ -264,23 +308,18 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
         body: JSON.stringify({ latitude, longitude }),
       });
-      setSendStatus(res.ok
-        ? 'Pozycja wysłana → InfluxDB.'
-        : 'Nie udało się wysłać pozycji użytkownika.');
+      setSendStatus(res.ok ? 'Pozycja wysłana → InfluxDB.' : 'Nie udało się wysłać pozycji użytkownika.');
     } catch {
       setSendStatus('Błąd połączenia z backendem.');
     }
   }
 
-  // ── Show route ────────────────────────────────────────────────────────────
   async function handleShowRoute() {
     if (userLatitude === null || userLongitude === null ||
         carLatitude  === null || carLongitude  === null) return;
     setIsLoadingRoute(true);
     try {
-      setRouteCoords(await fetchOSRMRoute(
-        userLatitude, userLongitude, carLatitude, carLongitude
-      ));
+      setRouteCoords(await fetchOSRMRoute(userLatitude, userLongitude, carLatitude, carLongitude));
     } catch {
       Alert.alert('Błąd', 'Nie udało się pobrać trasy. Sprawdź połączenie.');
     } finally {
@@ -288,11 +327,9 @@ export default function Home() {
     }
   }
 
-  // ── Map camera focus ──────────────────────────────────────────────────────
   function focusMap(lat: number, lon: number) {
     mapRef.current?.animateToRegion(
-      { latitude: lat, longitude: lon, latitudeDelta: 0.003, longitudeDelta: 0.003 },
-      400
+      { latitude: lat, longitude: lon, latitudeDelta: 0.003, longitudeDelta: 0.003 }, 400
     );
   }
 
@@ -313,10 +350,10 @@ export default function Home() {
     : { latitude: 52.2297, longitude: 21.0122, latitudeDelta: 0.01, longitudeDelta: 0.01 };
 
   const wsStatusLabel: Record<WsStatus, string> = {
-    connecting:  '🔄 Łączenie z serwerem...',
-    connected:   '🟢 Połączono (live)',
-    reconnecting:'🟡 Ponowne łączenie...',
-    error:       '🔴 Błąd WebSocket',
+    connecting:   '🔄 Łączenie z serwerem...',
+    connected:    '🟢 Połączono — live',
+    reconnecting: '🔁 Ponowne łączenie...',
+    error:        '🔴 Błąd WebSocket',
   };
 
   return (
@@ -328,18 +365,10 @@ export default function Home() {
       <View style={styles.mapBox}>
         <MapView ref={mapRef} style={styles.map} region={mapRegion}>
           {hasUserLocation && (
-            <Marker
-              coordinate={{ latitude: userLatitude!, longitude: userLongitude! }}
-              title="Ty"
-              pinColor="blue"
-            />
+            <Marker coordinate={{ latitude: userLatitude!, longitude: userLongitude! }} title="Ty" pinColor="blue" />
           )}
           {hasCarLocation && (
-            <Marker
-              coordinate={{ latitude: carLatitude!, longitude: carLongitude! }}
-              title="Auto"
-              pinColor="red"
-            />
+            <Marker coordinate={{ latitude: carLatitude!, longitude: carLongitude! }} title="Auto" pinColor="red" />
           )}
           {routeCoords.length > 0 && (
             <Polyline coordinates={routeCoords} strokeColor="#1d4ed8" strokeWidth={4} />
@@ -347,12 +376,9 @@ export default function Home() {
         </MapView>
       </View>
 
-      {/* Route button */}
       <TouchableOpacity
-        style={[
-          styles.button, styles.routeButton,
-          (!hasUserLocation || !hasCarLocation || isLoadingRoute) && styles.buttonDisabled,
-        ]}
+        style={[styles.button, styles.routeButton,
+          (!hasUserLocation || !hasCarLocation || isLoadingRoute) && styles.buttonDisabled]}
         onPress={handleShowRoute}
         disabled={!hasUserLocation || !hasCarLocation || isLoadingRoute}
       >
@@ -361,18 +387,14 @@ export default function Home() {
         </Text>
       </TouchableOpacity>
 
-      {/* Distance badge */}
       <View style={styles.distanceBox}>
         <Text style={styles.distanceLabel}>📍 Odległość od auta</Text>
-        <Text style={[
-          styles.distanceValue,
-          distanceToCarMetres !== null && distanceToCarMetres <= 15 && styles.distanceNear,
-        ]}>
+        <Text style={[styles.distanceValue,
+          distanceToCarMetres !== null && distanceToCarMetres <= 15 && styles.distanceNear]}>
           {distanceToCarMetres !== null ? formatDistance(distanceToCarMetres) : '---'}
         </Text>
       </View>
 
-      {/* Focus buttons */}
       <View style={styles.focusRow}>
         <TouchableOpacity
           style={[styles.focusButton, styles.focusButtonCar, !hasCarLocation && styles.buttonDisabled]}
@@ -390,29 +412,22 @@ export default function Home() {
         </TouchableOpacity>
       </View>
 
-      {/* User location box */}
-      <View style={styles.locationBox}>
-        <Text style={styles.boxTitle}>Twoja lokalizacja</Text>
-        <Text style={styles.status}>{locationStatus}</Text>
-        <Text style={styles.status}>{sendStatus}</Text>
-        <Text style={styles.label}>Ostatnia aktualizacja (InfluxDB)</Text>
-        <Text style={styles.value}>{userTime}</Text>
-        <Text style={styles.label}>Latitude</Text>
-        <Text style={styles.value}>{userLatitude  !== null ? userLatitude.toFixed(3)  : '---'}</Text>
-        <Text style={styles.label}>Longitude</Text>
-        <Text style={styles.value}>{userLongitude !== null ? userLongitude.toFixed(3) : '---'}</Text>
-      </View>
+      {/* ── Collapsible location boxes ──────────────────────────────────── */}
+      <LocationBox
+        title="Twoja lokalizacja"
+        latitude={userLatitude}
+        longitude={userLongitude}
+        lastUpdate={userTime}
+        statusLines={[locationStatus, sendStatus]}
+      />
 
-      {/* Car location box */}
-      <View style={styles.locationBox}>
-        <Text style={styles.boxTitle}>Lokalizacja auta</Text>
-        <Text style={styles.label}>Ostatnia aktualizacja (InfluxDB)</Text>
-        <Text style={styles.value}>{carTime}</Text>
-        <Text style={styles.label}>Latitude</Text>
-        <Text style={styles.value}>{carLatitude  !== null ? carLatitude.toFixed(3)  : '---'}</Text>
-        <Text style={styles.label}>Longitude</Text>
-        <Text style={styles.value}>{carLongitude !== null ? carLongitude.toFixed(3) : '---'}</Text>
-      </View>
+      <LocationBox
+        title="Lokalizacja auta"
+        latitude={carLatitude}
+        longitude={carLongitude}
+        lastUpdate={carTime}
+        statusLines={[]}
+      />
 
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Text style={styles.buttonText}>Wyloguj</Text>
@@ -429,6 +444,8 @@ const styles = StyleSheet.create({
   wsStatus:   { fontSize: 12, color: '#6b7280', marginBottom: 12, textAlign: 'center' },
   mapBox:     { width: '100%', maxWidth: 420, height: 260, borderRadius: 16, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#d1d5db', backgroundColor: '#ffffff' },
   map:        { width: '100%', height: '100%' },
+
+  // ── Distance badge ──────────────────────────────────────────────────────
   distanceBox: {
     width: '100%', maxWidth: 420, backgroundColor: '#ffffff', borderRadius: 12,
     paddingVertical: 14, paddingHorizontal: 16, marginBottom: 8,
@@ -438,19 +455,43 @@ const styles = StyleSheet.create({
   distanceLabel: { fontSize: 14, color: '#6b7280', fontWeight: '600' },
   distanceValue: { fontSize: 22, fontWeight: '800', color: '#111827' },
   distanceNear:  { color: '#16a34a' },
-  focusRow: { width: '100%', maxWidth: 420, flexDirection: 'row', gap: 10, marginBottom: 10 },
-  focusButton: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1 },
+
+  // ── Focus buttons ───────────────────────────────────────────────────────
+  focusRow:        { width: '100%', maxWidth: 420, flexDirection: 'row', gap: 10, marginBottom: 10 },
+  focusButton:     { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1 },
   focusButtonCar:  { backgroundColor: '#fef2f2', borderColor: '#fca5a5' },
   focusButtonUser: { backgroundColor: '#eff6ff', borderColor: '#93c5fd' },
   focusButtonText: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  locationBox: { width: '100%', maxWidth: 420, backgroundColor: '#ffffff', borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#d1d5db' },
-  boxTitle:   { fontSize: 16, fontWeight: '800', color: '#111827', textAlign: 'center', marginBottom: 8 },
-  status:     { fontSize: 12, color: '#374151', marginBottom: 6, textAlign: 'center' },
-  label:      { fontSize: 13, color: '#6b7280', textAlign: 'center', marginBottom: 2 },
-  value:      { fontSize: 14, fontWeight: '700', color: '#111827', textAlign: 'center', marginBottom: 8 },
-  button:     { width: '100%', maxWidth: 420, backgroundColor: '#111827', padding: 14, borderRadius: 12, marginTop: 2, alignItems: 'center' },
-  routeButton:  { backgroundColor: '#1d4ed8', marginBottom: 10 },
-  logoutButton: { width: '100%', maxWidth: 420, backgroundColor: '#4b5563', padding: 14, borderRadius: 12, marginTop: 8, alignItems: 'center' },
+
+  // ── Collapsible location box ────────────────────────────────────────────
+  locationBox: {
+    width: '100%', maxWidth: 420, backgroundColor: '#ffffff',
+    borderRadius: 12, padding: 12, marginBottom: 10,
+    borderWidth: 1, borderColor: '#d1d5db',
+  },
+  locationBoxHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  boxTitle:      { fontSize: 16, fontWeight: '800', color: '#111827' },
+  expandChevron: { fontSize: 13, color: '#9ca3af' },
+  coordRow: {
+    flexDirection: 'row', alignItems: 'center',
+  },
+  coordItem:    { flex: 1, alignItems: 'center' },
+  coordDivider: { width: 1, height: 36, backgroundColor: '#e5e7eb', marginHorizontal: 8 },
+  expandedSection: { marginTop: 10 },
+  expandedDivider: { height: 1, backgroundColor: '#e5e7eb', marginBottom: 10 },
+
+  // ── Shared text ─────────────────────────────────────────────────────────
+  status: { fontSize: 12, color: '#374151', marginBottom: 4, textAlign: 'center' },
+  label:  { fontSize: 13, color: '#6b7280', textAlign: 'center', marginBottom: 2 },
+  value:  { fontSize: 14, fontWeight: '700', color: '#111827', textAlign: 'center', marginBottom: 4 },
+
+  // ── Buttons ─────────────────────────────────────────────────────────────
+  button:         { width: '100%', maxWidth: 420, backgroundColor: '#111827', padding: 14, borderRadius: 12, marginTop: 2, alignItems: 'center' },
+  routeButton:    { backgroundColor: '#1d4ed8', marginBottom: 10 },
+  logoutButton:   { width: '100%', maxWidth: 420, backgroundColor: '#4b5563', padding: 14, borderRadius: 12, marginTop: 8, alignItems: 'center' },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+  buttonText:     { color: '#ffffff', fontSize: 16, fontWeight: '700' },
 });
