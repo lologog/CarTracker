@@ -491,6 +491,17 @@ void loop()
     // Execute HTTP POST
     int len = httpPostAndWait("/upload_position");
 
+    if (len > 0)
+    {
+        char readCmd[32];
+        snprintf(readCmd, sizeof(readCmd), "AT+SHREAD=0,%d", len);
+        sendAT(readCmd);
+    }
+    else
+    {
+        logMessage("ERROR", F("No +SHREQ received"));
+    }
+
     // Close HTTP session
     closeHTTP();
 
