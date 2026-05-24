@@ -277,8 +277,8 @@ bool getCSVFieldFromLine(const char* line, int fieldIndex, char* out, int outSiz
     return false;
 }
 
-// Parse one +CGNSINF line and extract latitude and longitude
-bool parseCGNSINFLine(const char* line, double &lat, double &lon)
+// Parse one +CGNSINF line and extract latitude and longitude as text
+bool parseCGNSINFLine(const char* line, char* latStr, int latSize, char* lonStr, int lonSize)
 {
     const char* p = strstr(line, "+CGNSINF:");
     if (p == NULL)
@@ -293,21 +293,22 @@ bool parseCGNSINFLine(const char* line, double &lat, double &lon)
         p++;
     }
 
-    char latStr[20];
-    char lonStr[20];
-
+    // Format:
+    // +CGNSINF: 1,,20260523135154.699,51.919997,19.129997,-38.724,...
+    //
     // Fields:
     // 0 = runStatus
     // 1 = fixStatus, sometimes empty
     // 2 = UTC
     // 3 = latitude
     // 4 = longitude
-    if (!getCSVFieldFromLine(p, 3, latStr, sizeof(latStr)))
+
+    if (!getCSVFieldFromLine(p, 3, latStr, latSize))
     {
         return false;
     }
 
-    if (!getCSVFieldFromLine(p, 4, lonStr, sizeof(lonStr)))
+    if (!getCSVFieldFromLine(p, 4, lonStr, lonSize))
     {
         return false;
     }
@@ -317,10 +318,7 @@ bool parseCGNSINFLine(const char* line, double &lat, double &lon)
         return false;
     }
 
-    lat = atof(latStr);
-    lon = atof(lonStr);
-
-    if (lat == 0.0 && lon == 0.0)
+    if (strcmp(latStr, "0") == 0 && strcmp(lonStr, "0") == 0)
     {
         return false;
     }
@@ -328,8 +326,8 @@ bool parseCGNSINFLine(const char* line, double &lat, double &lon)
     return true;
 }
 
-// Enables GNSS and retrieves current latitude and longitude
-bool getGPS(double &lat, double &lon)
+// Enables GNSS and retrieves current latitude and longitude directly from modem
+bool getGPS(char* latStr, int latSize, char* lonStr, int lonSize)
 {
     // Power on GNSS module
     sendAT("AT+CGNSPWR=1");
@@ -363,12 +361,12 @@ bool getGPS(double &lat, double &lon)
                 {
                     gnssLine[pos] = '\0';
 
-                    if (parseCGNSINFLine(gnssLine, lat, lon))
+                    if (parseCGNSINFLine(gnssLine, latStr, latSize, lonStr, lonSize))
                     {
                         Serial.print(F("GPS latitude: "));
-                        Serial.println(lat, 6);
+                        Serial.println(latStr);
                         Serial.print(F("GPS longitude: "));
-                        Serial.println(lon, 6);
+                        Serial.println(lonStr);
 
                         // Power off GNSS to save energy
                         sendAT("AT+CGNSPWR=0");
@@ -415,26 +413,24 @@ void setup()
 // System main loop
 void loop()
 {
-    double lat = 0.0; // Current GNSS latitude
-    double lon = 0.0; // Current GNSS longitude
-    char latStr[16]; // Latitude as string (for JSON)
-    char lonStr[16]; // Longitude as string (for JSON)
-    char json[192]; // HTTP JSON request body
+    char latStr[20]; // Current GNSS latitude as string
+    char lonStr[20]; // Current GNSS longitude as string
+    char json[96];   // HTTP JSON request body
+
+    latStr[0] = '\0';
+    lonStr[0] = '\0';
+    json[0] = '\0';
 
     // Get GNSS position
     logMessage("INFO", F("Getting GPS position..."));
-    if (!getGPS(lat, lon))
+    if (!getGPS(latStr, sizeof(latStr), lonStr, sizeof(lonStr)))
     {
         logMessage("ERROR", F("GPS fix failed"));
         return;
     }
 
-     // Convert coorinates to strings
-    dtostrf(lat, 0, 4, latStr);
-    dtostrf(lon, 0, 4, lonStr);
-
     // Small delay between GNSS and LTE switch
-    delay (2000);
+    delay(2000);
 
     // Open HTTP session
     openHTTP();
@@ -442,9 +438,9 @@ void loop()
 
     // Build JSON payload
     snprintf(json, sizeof(json),
-            "{\"longitude\":%s,"
-            "\"latitude\":%s}",
-            lonStr, latStr);
+             "{\"longitude\":%s,"
+             "\"latitude\":%s}",
+             lonStr, latStr);
 
     Serial.println(json);
 
