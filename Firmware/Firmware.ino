@@ -15,6 +15,9 @@
 SoftwareSerial shieldSerial(PIN_RX, PIN_TX);
 DFRobot_SIM7070G SIM7070G(&shieldSerial);
 
+// Small global buffer for GNSS line to save stack RAM
+char gnssLine[160];
+
 // Log messages in UART in format - [Firmware] [LEVEL] - message
 template<typename T>
 void logMessage(const char* level, T message)
@@ -234,6 +237,97 @@ void closeHTTP()
     sendAT("AT+SHDISC"); // Close HTTP connection and release resources
 }
 
+// Read one CSV field preserving empty fields
+bool getCSVFieldFromLine(const char* line, int fieldIndex, char* out, int outSize)
+{
+    int currentField = 0;
+    int outPos = 0;
+
+    out[0] = '\0';
+
+    for (int i = 0; ; i++)
+    {
+        char c = line[i];
+
+        if (currentField == fieldIndex)
+        {
+            if (c == ',' || c == '\0' || c == '\r' || c == '\n')
+            {
+                out[outPos] = '\0';
+                return true;
+            }
+
+            if (outPos < outSize - 1)
+            {
+                out[outPos++] = c;
+            }
+        }
+
+        if (c == ',')
+        {
+            currentField++;
+        }
+
+        if (c == '\0' || c == '\r' || c == '\n')
+        {
+            break;
+        }
+    }
+
+    return false;
+}
+
+// Parse one +CGNSINF line and extract latitude and longitude
+bool parseCGNSINFLine(const char* line, double &lat, double &lon)
+{
+    const char* p = strstr(line, "+CGNSINF:");
+    if (p == NULL)
+    {
+        return false;
+    }
+
+    p += 9;
+
+    while (*p == ' ')
+    {
+        p++;
+    }
+
+    char latStr[20];
+    char lonStr[20];
+
+    // Fields:
+    // 0 = runStatus
+    // 1 = fixStatus, sometimes empty
+    // 2 = UTC
+    // 3 = latitude
+    // 4 = longitude
+    if (!getCSVFieldFromLine(p, 3, latStr, sizeof(latStr)))
+    {
+        return false;
+    }
+
+    if (!getCSVFieldFromLine(p, 4, lonStr, sizeof(lonStr)))
+    {
+        return false;
+    }
+
+    if (strlen(latStr) == 0 || strlen(lonStr) == 0)
+    {
+        return false;
+    }
+
+    lat = atof(latStr);
+    lon = atof(lonStr);
+
+    if (lat == 0.0 && lon == 0.0)
+    {
+        return false;
+    }
+
+    return true;
+}
+
 // Enables GNSS and retrieves current latitude and longitude
 bool getGPS(double &lat, double &lon)
 {
@@ -242,20 +336,60 @@ bool getGPS(double &lat, double &lon)
 
     // Wait up to 120 seconds for a valid GNSS
     unsigned long start = millis();
-    while (millis() - start < 120000)
-    {
-        if (SIM7070G.getPosition())
-        {
-            // Read latitude and longitute from modem
-            lat = atof(SIM7070G.getLatitude());
-            lon = atof(SIM7070G.getLongitude());
 
-            // Power off GNSS to save energy
-            sendAT("AT+CGNSPWR=0");
-            return true;
+    while (millis() - start < 120000UL)
+    {
+        while (shieldSerial.available())
+        {
+            shieldSerial.read();
         }
 
-        // Retry every 2 seconds
+        Serial.println(F(">> AT+CGNSINF"));
+        shieldSerial.print(F("AT+CGNSINF\r\n"));
+
+        int pos = 0;
+        gnssLine[0] = '\0';
+
+        unsigned long queryStart = millis();
+
+        while (millis() - queryStart < 3000UL)
+        {
+            while (shieldSerial.available())
+            {
+                char c = shieldSerial.read();
+                Serial.write(c);
+
+                if (c == '\n')
+                {
+                    gnssLine[pos] = '\0';
+
+                    if (parseCGNSINFLine(gnssLine, lat, lon))
+                    {
+                        Serial.print(F("GPS latitude: "));
+                        Serial.println(lat, 6);
+                        Serial.print(F("GPS longitude: "));
+                        Serial.println(lon, 6);
+
+                        // Power off GNSS to save energy
+                        sendAT("AT+CGNSPWR=0");
+                        return true;
+                    }
+
+                    pos = 0;
+                    gnssLine[0] = '\0';
+                }
+                else if (c != '\r')
+                {
+                    if (pos < (int)sizeof(gnssLine) - 1)
+                    {
+                        gnssLine[pos++] = c;
+                        gnssLine[pos] = '\0';
+                    }
+                }
+            }
+        }
+
+        logMessage("INFO", F("Waiting for GPS coordinates..."));
         delay(2000);
     }
 
