@@ -237,6 +237,34 @@ void closeHTTP()
     sendAT("AT+SHDISC"); // Close HTTP connection and release resources
 }
 
+// Prepare fresh HTTP session before every send
+bool prepareHTTPForSend()
+{
+    logMessage("INFO", F("Preparing HTTP session..."));
+
+    // Close previous HTTP session if it exists; ignore errors
+    sendAT("AT+SHDISC");
+    delay(500);
+
+    // Make sure PDP context is active again
+    sendAT("AT+CNACT?");
+    sendAT("AT+CNACT=0,1");
+    delay(3000);
+    sendAT("AT+CNACT?");
+
+    // Reconfigure SSL and HTTP every cycle
+    initSSL();
+    initHTTP();
+
+    // Open fresh HTTP session
+    openHTTP();
+
+    // Set headers every cycle
+    setHTTPHeaders();
+
+    return true;
+}
+
 // Read one CSV field preserving empty fields
 bool getCSVFieldFromLine(const char* line, int fieldIndex, char* out, int outSize)
 {
@@ -432,9 +460,8 @@ void loop()
     // Small delay between GNSS and LTE switch
     delay(2000);
 
-    // Open HTTP session
-    openHTTP();
-    setHTTPHeaders();
+    // Prepare fresh HTTP session
+    prepareHTTPForSend();
 
     // Build JSON payload
     snprintf(json, sizeof(json),
