@@ -464,10 +464,17 @@ void loop()
     prepareHTTPForSend();
 
     // Build JSON payload
-    snprintf(json, sizeof(json),
+    int written = snprintf(json, sizeof(json),
              "{\"longitude\":%s,"
              "\"latitude\":%s}",
              lonStr, latStr);
+
+    if (written <= 0 || written >= (int)sizeof(json))
+    {
+        logMessage("ERROR", F("JSON build failed"));
+        closeHTTP();
+        return;
+    }
 
     Serial.println(json);
 
