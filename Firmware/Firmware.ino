@@ -215,22 +215,6 @@ void setHTTPHeaders()
     sendAT("AT+SHAHEAD=\"x-api-key\",\"SOME_SECRET_KEY\""); // Custom API auth header
 }
 
-// Send HTTP POST request with previously prepared JSON body and read response
-void postJson(const char* endpoint)
-{
-    int len = httpPostAndWait(endpoint); // Send HTTP POST request to the given endpoint
-    if (len > 0)
-    {
-        // read full HTTP response body
-        sendAT(("AT+SHREAD=0," + String(len)).c_str());
-    }
-    else
-    {
-        //No response received within timeout
-        logMessage("ERROR", F("No +SHREQ received"));
-    }
-}
-
 // Close HTTP connection and release allocated resources
 void closeHTTP()
 {
