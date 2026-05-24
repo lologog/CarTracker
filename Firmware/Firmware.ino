@@ -4,6 +4,7 @@
 */
 
 #include <DFRobot_SIM7070G.h>
+#include <SoftwareSerial.h>
 #include "LowPower.h"
 
 #define PIN_TX 7
