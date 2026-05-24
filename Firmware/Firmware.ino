@@ -106,14 +106,20 @@ void sendAT(const char* cmd)
 int httpPostAndWait(const char* path, unsigned long timeoutMs = 20000)
 {
     // Clear RX buffer to avoid parsing old data
-    while (shieldSerial.available()) shieldSerial.read();
+    while (shieldSerial.available())
+    {
+        shieldSerial.read();
+    }
 
     // Send HTTP POST request (method=3)
     shieldSerial.print(F("AT+SHREQ=\""));
     shieldSerial.print(path);
     shieldSerial.print(F("\",3\r\n"));
 
-    String line = "";
+    char line[96];
+    int linePos = 0;
+    line[0] = '\0';
+
     unsigned long start = millis();
 
     // Wait for the response from the server - max timeout 20 sec
@@ -128,28 +134,34 @@ int httpPostAndWait(const char* path, unsigned long timeoutMs = 20000)
             // Whole line read
             if (c == '\n')
             {
-                // Remove white signs
-                line.trim();
+                line[linePos] = '\0';
 
                 // Search for response +SHREQ response after POST
-                if (line.startsWith("+SHREQ:"))
+                if (strncmp(line, "+SHREQ:", 7) == 0)
                 {
                     // Take body length given by the response (+SHREQ: "POST",200,449 <-- length)
-                    int lastComma = line.lastIndexOf(',');
-                    if (lastComma > 0)
+                    char* lastComma = strrchr(line, ',');
+                    if (lastComma != NULL)
                     {
-                        int len = line.substring(lastComma + 1).toInt();
+                        int len = atoi(lastComma + 1);
                         return len;
                     }
                 }
-                line = "";
+
+                linePos = 0;
+                line[0] = '\0';
             }
-            else
+            else if (c != '\r')
             {
-                line += c;
+                if (linePos < (int)sizeof(line) - 1)
+                {
+                    line[linePos++] = c;
+                    line[linePos] = '\0';
+                }
             }
         }
     }
+
     return -1;
 }
 
