@@ -19,9 +19,9 @@ DFRobot_SIM7070G SIM7070G(&shieldSerial);
 template<typename T>
 void logMessage(const char* level, T message)
 {
-    Serial.print("[Firmware] [");
+    Serial.print(F("[Firmware] ["));
     Serial.print(level);
-    Serial.print("] - ");
+    Serial.print(F("] - "));
     Serial.println(message);
 }
 
@@ -31,15 +31,15 @@ void initSIM7070G()
     // Turn ON SIM7070G
     while (1)
     {
-        logMessage("INFO", "Turning ON SIM7070G...");
+        logMessage("INFO", F("Turning ON SIM7070G..."));
         if (SIM7070G.turnON())
         {
-            logMessage("INFO", "SIM7070G turned ON");
+            logMessage("INFO", F("SIM7070G turned ON"));
             break;
         }
         else
         {
-            logMessage("ERROR", "Cannot turn ON SIM7070G, retrying...");
+            logMessage("ERROR", F("Cannot turn ON SIM7070G, retrying..."));
             delay(1000);
         }
     }
@@ -47,15 +47,15 @@ void initSIM7070G()
     // Set baud rate on software UART
     while (1)
     {
-        logMessage("INFO", "Setting software UART baud rate...");
+        logMessage("INFO", F("Setting software UART baud rate..."));
         if (SIM7070G.setBaudRate(SOFT_UART_BAUDRATE))
         {
-            logMessage("INFO", String("Set baud rate: ") + SOFT_UART_BAUDRATE);
+            logMessage("INFO", F("Set baud rate: 19200"));
             break;
         }
         else
         {
-            logMessage("ERROR", "Failed to set baud rate, retrying...");
+            logMessage("ERROR", F("Failed to set baud rate, retrying..."));
             delay(1000);
         }
     }
@@ -63,15 +63,15 @@ void initSIM7070G()
     // Check if the SIM card is working properly
     while (1)
     {
-        logMessage("INFO", "Checking SIM card...");
+        logMessage("INFO", F("Checking SIM card..."));
         if (SIM7070G.checkSIMStatus())
         {
-            logMessage("INFO", "SIM card OK");
+            logMessage("INFO", F("SIM card OK"));
             break;
         }
         else
         {
-            logMessage("ERROR", "SIM card check failed, retrying...");
+            logMessage("ERROR", F("SIM card check failed, retrying..."));
             delay(1000);
         }
     }
@@ -81,12 +81,12 @@ void initSIM7070G()
 void sendAT(const char* cmd)
 {
     // Print command to Serial Monitor
-    Serial.print(">> ");
+    Serial.print(F(">> "));
     Serial.println(cmd);
 
     // Send AT command to SIM7070G via software serial
     shieldSerial.print(cmd);
-    shieldSerial.print("\r\n");
+    shieldSerial.print(F("\r\n"));
 
     // Read modem response for up to 3 seconds
     unsigned long t = millis();
@@ -99,7 +99,7 @@ void sendAT(const char* cmd)
         }
     }
 
-    Serial.println("\n----");
+    Serial.println(F("\n----"));
 }
 
 // HTTP post and wait for response due to catch +SHREQ response body size
@@ -109,9 +109,9 @@ int httpPostAndWait(const char* path, unsigned long timeoutMs = 20000)
     while (shieldSerial.available()) shieldSerial.read();
 
     // Send HTTP POST request (method=3)
-    shieldSerial.print("AT+SHREQ=\"");
+    shieldSerial.print(F("AT+SHREQ=\""));
     shieldSerial.print(path);
-    shieldSerial.print("\",3\r\n");
+    shieldSerial.print(F("\",3\r\n"));
 
     String line = "";
     unsigned long start = millis();
@@ -212,7 +212,7 @@ void postJson(const char* endpoint)
     else
     {
         //No response received within timeout
-        logMessage("ERROR", "No +SHREQ received");
+        logMessage("ERROR", F("No +SHREQ received"));
     }
 }
 
@@ -276,10 +276,10 @@ void loop()
     char json[192]; // HTTP JSON request body
 
     // Get GNSS position
-    logMessage("INFO", "Getting GPS position...");
+    logMessage("INFO", F("Getting GPS position..."));
     if (!getGPS(lat, lon))
     {
-        logMessage("ERROR", "GPS fix failed");
+        logMessage("ERROR", F("GPS fix failed"));
         return;
     }
 
@@ -318,7 +318,7 @@ void loop()
     // Close HTTP session
     closeHTTP();
 
-    logMessage("INFO", "Send cycle complete");
+    logMessage("INFO", F("Send cycle complete"));
 
     // Send data once per defined time (5 min)
     for (int i = 0; i < 37; i++)
