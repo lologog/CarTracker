@@ -4,3 +4,4 @@ pydantic
 dotenv
 jinja2
 asyncio
+influxdb_client
