@@ -183,6 +183,7 @@ async def login(data: LoginRequest):
             detail="Incorrect login or password"
         )
 
+    logger.info(f"Successfuly logged: %s", USER)
     return {"message": "Login successful"}
 
 @app.post("/upload_position", dependencies=[Depends(get_api_key)])
