@@ -4,8 +4,10 @@ import * as Notifications from 'expo-notifications';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Modal,
   Platform,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -95,58 +97,53 @@ async function sendCarMovingNotification(distanceMetres: number) {
 
 // ─── Theme tokens ────────────────────────────────────────────────────────────
 const LIGHT = {
-  bg:           '#f3f4f6',
-  surface:      '#ffffff',
-  border:       '#d1d5db',
-  divider:      '#e5e7eb',
-  text:         '#111827',
-  textMuted:    '#6b7280',
-  textFaint:    '#9ca3af',
-  textStatus:   '#374151',
-  mapStyle:     [] as object[],
+  bg:          '#f3f4f6',
+  surface:     '#ffffff',
+  border:      '#d1d5db',
+  divider:     '#e5e7eb',
+  text:        '#111827',
+  textMuted:   '#6b7280',
+  textFaint:   '#9ca3af',
+  textStatus:  '#374151',
+  mapStyle:    [] as object[],
 };
-
 const DARK = {
-  bg:           '#0f172a',
-  surface:      '#1e293b',
-  border:       '#334155',
-  divider:      '#334155',
-  text:         '#f1f5f9',
-  textMuted:    '#94a3b8',
-  textFaint:    '#64748b',
-  textStatus:   '#cbd5e1',
+  bg:          '#0f172a',
+  surface:     '#1e293b',
+  border:      '#334155',
+  divider:     '#334155',
+  text:        '#f1f5f9',
+  textMuted:   '#94a3b8',
+  textFaint:   '#64748b',
+  textStatus:  '#cbd5e1',
   mapStyle: [
-    { elementType: 'geometry',            stylers: [{ color: '#1e293b' }] },
-    { elementType: 'labels.text.fill',    stylers: [{ color: '#94a3b8' }] },
-    { elementType: 'labels.text.stroke',  stylers: [{ color: '#0f172a' }] },
-    { featureType: 'road',                elementType: 'geometry',           stylers: [{ color: '#334155' }] },
-    { featureType: 'road',                elementType: 'geometry.stroke',    stylers: [{ color: '#0f172a' }] },
-    { featureType: 'water',               elementType: 'geometry',           stylers: [{ color: '#0f172a' }] },
-    { featureType: 'poi',                 elementType: 'geometry',           stylers: [{ color: '#1e293b' }] },
-    { featureType: 'transit',             elementType: 'geometry',           stylers: [{ color: '#1e293b' }] },
-    { featureType: 'administrative',      elementType: 'geometry',           stylers: [{ color: '#334155' }] },
-    { featureType: 'landscape',           elementType: 'geometry',           stylers: [{ color: '#172033' }] },
+    { elementType: 'geometry',           stylers: [{ color: '#1e293b' }] },
+    { elementType: 'labels.text.fill',   stylers: [{ color: '#94a3b8' }] },
+    { elementType: 'labels.text.stroke', stylers: [{ color: '#0f172a' }] },
+    { featureType: 'road',               elementType: 'geometry',        stylers: [{ color: '#334155' }] },
+    { featureType: 'road',               elementType: 'geometry.stroke', stylers: [{ color: '#0f172a' }] },
+    { featureType: 'water',              elementType: 'geometry',        stylers: [{ color: '#0f172a' }] },
+    { featureType: 'poi',                elementType: 'geometry',        stylers: [{ color: '#1e293b' }] },
+    { featureType: 'transit',            elementType: 'geometry',        stylers: [{ color: '#1e293b' }] },
+    { featureType: 'administrative',     elementType: 'geometry',        stylers: [{ color: '#334155' }] },
+    { featureType: 'landscape',          elementType: 'geometry',        stylers: [{ color: '#172033' }] },
   ],
 };
 
-// ─── Sun icon (light mode indicator) ────────────────────────────────────────
+// ─── Icons ────────────────────────────────────────────────────────────────────
 function SunIcon({ color }: { color: string }) {
   return (
     <View style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
-      {/* Centre circle */}
       <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
-      {/* 8 rays */}
       {[0,45,90,135,180,225,270,315].map((deg) => {
         const rad = (deg * Math.PI) / 180;
-        const x = Math.round(Math.cos(rad) * 9);
-        const y = Math.round(Math.sin(rad) * 9);
         return (
           <View key={deg} style={{
             position: 'absolute',
             width: 3, height: 3, borderRadius: 1.5,
             backgroundColor: color,
-            left: 11 + x - 1.5,
-            top:  11 + y - 1.5,
+            left: 11 + Math.round(Math.cos(rad) * 9) - 1.5,
+            top:  11 + Math.round(Math.sin(rad) * 9) - 1.5,
           }} />
         );
       })}
@@ -154,12 +151,61 @@ function SunIcon({ color }: { color: string }) {
   );
 }
 
-// ─── Moon icon (dark mode indicator) ────────────────────────────────────────
 function MoonIcon({ color }: { color: string }) {
   return (
     <View style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
       <Text style={{ fontSize: 16, color, lineHeight: 22 }}>☽</Text>
     </View>
+  );
+}
+
+// ─── Expand / Collapse icon ──────────────────────────────────────────────────
+function ExpandIcon({ expanded, color }: { expanded: boolean; color: string }) {
+  // Two-arrow icon: ↗↙ when collapsed, ↙↗ (converging) when expanded
+  return (
+    <Text style={{ fontSize: 15, color, lineHeight: 20 }}>
+      {expanded ? '⤡' : '⤢'}
+    </Text>
+  );
+}
+
+// ─── Shared MapView content ──────────────────────────────────────────────────
+type MapContentProps = {
+  mapRef:       React.RefObject<MapView>;
+  mapRegion:    object;
+  mapStyle:     object[];
+  hasUser:      boolean;
+  userLat:      number | null;
+  userLon:      number | null;
+  hasCar:       boolean;
+  carLat:       number | null;
+  carLon:       number | null;
+  routeCoords:  Array<{ latitude: number; longitude: number }>;
+};
+
+function MapContent({
+  mapRef, mapRegion, mapStyle,
+  hasUser, userLat, userLon,
+  hasCar, carLat, carLon,
+  routeCoords,
+}: MapContentProps) {
+  return (
+    <MapView
+      ref={mapRef}
+      style={{ width: '100%', height: '100%' }}
+      region={mapRegion as any}
+      customMapStyle={mapStyle}
+    >
+      {hasUser && userLat !== null && userLon !== null && (
+        <Marker coordinate={{ latitude: userLat, longitude: userLon }} title="Ty" pinColor="blue" />
+      )}
+      {hasCar && carLat !== null && carLon !== null && (
+        <Marker coordinate={{ latitude: carLat, longitude: carLon }} title="Auto" pinColor="red" />
+      )}
+      {routeCoords.length > 0 && (
+        <Polyline coordinates={routeCoords} strokeColor="#1d4ed8" strokeWidth={4} />
+      )}
+    </MapView>
   );
 }
 
@@ -174,34 +220,36 @@ type LocationBoxProps = {
   theme:       Theme;
 };
 
-function LocationBox({ title, latitude, longitude, lastUpdate, statusLines, theme }: LocationBoxProps) {
+function LocationBox({ title, latitude, longitude, lastUpdate, statusLines, theme: t }: LocationBoxProps) {
   const [expanded, setExpanded] = useState(false);
-  const s = locationBoxStyles(theme);
-
   return (
-    <TouchableOpacity style={s.box} onPress={() => setExpanded((v) => !v)} activeOpacity={0.85}>
-      <View style={s.header}>
-        <Text style={s.boxTitle}>{title}</Text>
-        <Text style={s.chevron}>{expanded ? '▲' : '▼'}</Text>
+    <TouchableOpacity
+      style={[lbStyles.box, { backgroundColor: t.surface, borderColor: t.border }]}
+      onPress={() => setExpanded((v) => !v)}
+      activeOpacity={0.85}
+    >
+      <View style={lbStyles.header}>
+        <Text style={[lbStyles.boxTitle, { color: t.text }]}>{title}</Text>
+        <Text style={{ fontSize: 13, color: t.textFaint }}>{expanded ? '▲' : '▼'}</Text>
       </View>
-      <View style={s.coordRow}>
-        <View style={s.coordItem}>
-          <Text style={s.label}>Latitude</Text>
-          <Text style={s.value}>{latitude !== null ? latitude.toFixed(3) : '---'}</Text>
+      <View style={lbStyles.coordRow}>
+        <View style={lbStyles.coordItem}>
+          <Text style={[lbStyles.label, { color: t.textMuted }]}>Latitude</Text>
+          <Text style={[lbStyles.value, { color: t.text }]}>{latitude !== null ? latitude.toFixed(3) : '---'}</Text>
         </View>
-        <View style={s.divider} />
-        <View style={s.coordItem}>
-          <Text style={s.label}>Longitude</Text>
-          <Text style={s.value}>{longitude !== null ? longitude.toFixed(3) : '---'}</Text>
+        <View style={[lbStyles.divider, { backgroundColor: t.divider }]} />
+        <View style={lbStyles.coordItem}>
+          <Text style={[lbStyles.label, { color: t.textMuted }]}>Longitude</Text>
+          <Text style={[lbStyles.value, { color: t.text }]}>{longitude !== null ? longitude.toFixed(3) : '---'}</Text>
         </View>
       </View>
       {expanded && (
-        <View style={s.expandedSection}>
-          <View style={s.expandedDivider} />
-          <Text style={s.label}>Ostatnia aktualizacja InfluxDB</Text>
-          <Text style={s.value}>{lastUpdate}</Text>
+        <View style={lbStyles.expandedSection}>
+          <View style={[lbStyles.expandedDivider, { backgroundColor: t.divider }]} />
+          <Text style={[lbStyles.label, { color: t.textMuted }]}>Ostatnia aktualizacja InfluxDB</Text>
+          <Text style={[lbStyles.value, { color: t.text }]}>{lastUpdate}</Text>
           {statusLines.map((line, i) => (
-            <Text key={i} style={s.status}>{line}</Text>
+            <Text key={i} style={[lbStyles.status, { color: t.textStatus }]}>{line}</Text>
           ))}
         </View>
       )}
@@ -209,44 +257,41 @@ function LocationBox({ title, latitude, longitude, lastUpdate, statusLines, them
   );
 }
 
-function locationBoxStyles(t: Theme) {
-  return StyleSheet.create({
-    box:             { width: '100%', maxWidth: 420, backgroundColor: t.surface, borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: t.border },
-    header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-    boxTitle:        { fontSize: 16, fontWeight: '800', color: t.text },
-    chevron:         { fontSize: 13, color: t.textFaint },
-    coordRow:        { flexDirection: 'row', alignItems: 'center' },
-    coordItem:       { flex: 1, alignItems: 'center' },
-    divider:         { width: 1, height: 36, backgroundColor: t.divider, marginHorizontal: 8 },
-    expandedSection: { marginTop: 10 },
-    expandedDivider: { height: 1, backgroundColor: t.divider, marginBottom: 10 },
-    label:           { fontSize: 13, color: t.textMuted, textAlign: 'center', marginBottom: 2 },
-    value:           { fontSize: 14, fontWeight: '700', color: t.text, textAlign: 'center', marginBottom: 4 },
-    status:          { fontSize: 12, color: t.textStatus, marginBottom: 4, textAlign: 'center' },
-  });
-}
+const lbStyles = StyleSheet.create({
+  box:             { width: '100%', maxWidth: 420, borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1 },
+  header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  boxTitle:        { fontSize: 16, fontWeight: '800' },
+  coordRow:        { flexDirection: 'row', alignItems: 'center' },
+  coordItem:       { flex: 1, alignItems: 'center' },
+  divider:         { width: 1, height: 36, marginHorizontal: 8 },
+  expandedSection: { marginTop: 10 },
+  expandedDivider: { height: 1, marginBottom: 10 },
+  label:           { fontSize: 13, textAlign: 'center', marginBottom: 2 },
+  value:           { fontSize: 14, fontWeight: '700', textAlign: 'center', marginBottom: 4 },
+  status:          { fontSize: 12, marginBottom: 4, textAlign: 'center' },
+});
 
 type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 export default function Home() {
   const systemScheme = useColorScheme();
-  const [isDark, setIsDark] = useState(systemScheme === 'dark');
+  const [isDark, setIsDark]           = useState(systemScheme === 'dark');
+  const [mapExpanded, setMapExpanded] = useState(false);
   const theme = isDark ? DARK : LIGHT;
 
-  const [userLatitude, setUserLatitude]   = useState<number | null>(null);
+  const [userLatitude,  setUserLatitude]  = useState<number | null>(null);
   const [userLongitude, setUserLongitude] = useState<number | null>(null);
-  const [userTime, setUserTime]           = useState('---');
+  const [userTime,      setUserTime]      = useState('---');
 
-  const [carLatitude, setCarLatitude]   = useState<number | null>(null);
+  const [carLatitude,  setCarLatitude]  = useState<number | null>(null);
   const [carLongitude, setCarLongitude] = useState<number | null>(null);
-  const [carTime, setCarTime]           = useState('---');
+  const [carTime,      setCarTime]      = useState('---');
 
-  const [routeCoords, setRouteCoords]       = useState<Array<{ latitude: number; longitude: number }>>([]);
-  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
-
-  const [locationStatus, setLocationStatus] = useState('Pobieram lokalizację użytkownika...');
-  const [sendStatus, setSendStatus]         = useState('Pozycja użytkownika nie została jeszcze wysłana.');
-  const [wsStatus, setWsStatus]             = useState<WsStatus>('connecting');
+  const [routeCoords,     setRouteCoords]     = useState<Array<{ latitude: number; longitude: number }>>([]);
+  const [isLoadingRoute,  setIsLoadingRoute]  = useState(false);
+  const [locationStatus,  setLocationStatus]  = useState('Pobieram lokalizację użytkownika...');
+  const [sendStatus,      setSendStatus]      = useState('Pozycja użytkownika nie została jeszcze wysłana.');
+  const [wsStatus,        setWsStatus]        = useState<WsStatus>('connecting');
 
   const prevCarLatRef   = useRef<number | null>(null);
   const prevCarLonRef   = useRef<number | null>(null);
@@ -257,9 +302,10 @@ export default function Home() {
   const wsRetryRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryDelayRef   = useRef(2000);
   const mapRef          = useRef<MapView>(null);
+  const fullMapRef      = useRef<MapView>(null);
   const notifEnabledRef = useRef(false);
 
-  useEffect(() => { userLatRef.current = userLatitude; }, [userLatitude]);
+  useEffect(() => { userLatRef.current = userLatitude;  }, [userLatitude]);
   useEffect(() => { userLonRef.current = userLongitude; }, [userLongitude]);
 
   const distanceToCarMetres = useMemo<number | null>(() => {
@@ -400,9 +446,9 @@ export default function Home() {
   }
 
   function focusMap(lat: number, lon: number) {
-    mapRef.current?.animateToRegion(
-      { latitude: lat, longitude: lon, latitudeDelta: 0.003, longitudeDelta: 0.003 }, 400
-    );
+    const region = { latitude: lat, longitude: lon, latitudeDelta: 0.003, longitudeDelta: 0.003 };
+    mapRef.current?.animateToRegion(region, 400);
+    fullMapRef.current?.animateToRegion(region, 400);
   }
 
   function handleLogout() {
@@ -430,28 +476,66 @@ export default function Home() {
 
   const t = theme;
 
+  // Shared map props passed to both inline and fullscreen instances
+  const mapContentProps: MapContentProps = {
+    mapRegion, mapStyle: t.mapStyle,
+    hasUser: hasUserLocation, userLat: userLatitude, userLon: userLongitude,
+    hasCar:  hasCarLocation,  carLat:  carLatitude,  carLon:  carLongitude,
+    routeCoords,
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
+      {/* ── Status bar color ──────────────────────────────────────────────── */}
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={t.bg} />
+
       {/* ── Theme toggle — fixed top-left ─────────────────────────────────── */}
       <TouchableOpacity
         onPress={() => setIsDark((v) => !v)}
         style={{
           position: 'absolute', top: 52, left: 16, zIndex: 10,
           width: 40, height: 40, borderRadius: 20,
-          backgroundColor: t.surface,
-          borderWidth: 1, borderColor: t.border,
+          backgroundColor: t.surface, borderWidth: 1, borderColor: t.border,
           alignItems: 'center', justifyContent: 'center',
-          shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
-          elevation: 4,
+          shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 4,
+          shadowOffset: { width: 0, height: 2 }, elevation: 4,
         }}
         accessibilityLabel={isDark ? 'Przełącz na tryb jasny' : 'Przełącz na tryb ciemny'}
       >
-        {isDark
-          ? <SunIcon  color={t.text} />
-          : <MoonIcon color={t.text} />
-        }
+        {isDark ? <SunIcon color={t.text} /> : <MoonIcon color={t.text} />}
       </TouchableOpacity>
 
+      {/* ════════════════════════════════════════════════════════════════════
+          Fullscreen map Modal
+          ════════════════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={mapExpanded}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setMapExpanded(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          <MapContent mapRef={fullMapRef} {...mapContentProps} />
+
+          {/* Collapse button — top-right */}
+          <TouchableOpacity
+            onPress={() => setMapExpanded(false)}
+            style={{
+              position: 'absolute', top: 52, right: 16,
+              width: 44, height: 44, borderRadius: 22,
+              backgroundColor: 'rgba(0,0,0,0.55)',
+              alignItems: 'center', justifyContent: 'center',
+            }}
+            accessibilityLabel="Zamknij pełny ekran"
+          >
+            <ExpandIcon expanded color="#ffffff" />
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          Main scroll content
+          ════════════════════════════════════════════════════════════════════ */}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ alignItems: 'center', padding: 16, paddingBottom: 32 }}
@@ -466,31 +550,30 @@ export default function Home() {
           {wsStatusLabel[wsStatus]}
         </Text>
 
-        {/* ── Map ──────────────────────────────────────────────────────────── */}
+        {/* ── Inline map box ────────────────────────────────────────────── */}
         <View style={{
           width: '100%', maxWidth: 420, height: 260, borderRadius: 16,
           overflow: 'hidden', marginBottom: 12,
           borderWidth: 1, borderColor: t.border, backgroundColor: t.surface,
         }}>
-          <MapView
-            ref={mapRef}
-            style={{ width: '100%', height: '100%' }}
-            region={mapRegion}
-            customMapStyle={t.mapStyle}
+          <MapContent mapRef={mapRef} {...mapContentProps} />
+
+          {/* Expand button — bottom-right corner of the inline map */}
+          <TouchableOpacity
+            onPress={() => setMapExpanded(true)}
+            style={{
+              position: 'absolute', bottom: 10, right: 10,
+              width: 36, height: 36, borderRadius: 18,
+              backgroundColor: 'rgba(0,0,0,0.45)',
+              alignItems: 'center', justifyContent: 'center',
+            }}
+            accessibilityLabel="Rozwiń mapę na cały ekran"
           >
-            {hasUserLocation && (
-              <Marker coordinate={{ latitude: userLatitude!, longitude: userLongitude! }} title="Ty" pinColor="blue" />
-            )}
-            {hasCarLocation && (
-              <Marker coordinate={{ latitude: carLatitude!, longitude: carLongitude! }} title="Auto" pinColor="red" />
-            )}
-            {routeCoords.length > 0 && (
-              <Polyline coordinates={routeCoords} strokeColor="#1d4ed8" strokeWidth={4} />
-            )}
-          </MapView>
+            <ExpandIcon expanded={false} color="#ffffff" />
+          </TouchableOpacity>
         </View>
 
-        {/* ── Route button ─────────────────────────────────────────────────── */}
+        {/* ── Route button ─────────────────────────────────────────────── */}
         <TouchableOpacity
           style={[
             { width: '100%', maxWidth: 420, backgroundColor: '#1d4ed8', padding: 14, borderRadius: 12, marginBottom: 10, alignItems: 'center' },
@@ -504,7 +587,7 @@ export default function Home() {
           </Text>
         </TouchableOpacity>
 
-        {/* ── Distance badge ───────────────────────────────────────────────── */}
+        {/* ── Distance badge ────────────────────────────────────────────── */}
         <View style={{
           width: '100%', maxWidth: 420, backgroundColor: t.surface, borderRadius: 12,
           paddingVertical: 14, paddingHorizontal: 16, marginBottom: 8,
@@ -520,11 +603,13 @@ export default function Home() {
           </Text>
         </View>
 
-        {/* ── Focus buttons ────────────────────────────────────────────────── */}
+        {/* ── Focus buttons ────────────────────────────────────────────── */}
         <View style={{ width: '100%', maxWidth: 420, flexDirection: 'row', gap: 10, marginBottom: 10 }}>
           <TouchableOpacity
             style={[
-              { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, backgroundColor: isDark ? '#1e2d3d' : '#fef2f2', borderColor: isDark ? '#4a3030' : '#fca5a5' },
+              { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1,
+                backgroundColor: isDark ? '#1e2d3d' : '#fef2f2',
+                borderColor:     isDark ? '#4a3030' : '#fca5a5' },
               !hasCarLocation && { opacity: 0.6 },
             ]}
             onPress={() => hasCarLocation && focusMap(carLatitude!, carLongitude!)}
@@ -534,7 +619,9 @@ export default function Home() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[
-              { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, backgroundColor: isDark ? '#1a2a3d' : '#eff6ff', borderColor: isDark ? '#2d4a6e' : '#93c5fd' },
+              { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1,
+                backgroundColor: isDark ? '#1a2a3d' : '#eff6ff',
+                borderColor:     isDark ? '#2d4a6e' : '#93c5fd' },
               !hasUserLocation && { opacity: 0.6 },
             ]}
             onPress={() => hasUserLocation && focusMap(userLatitude!, userLongitude!)}
@@ -544,7 +631,7 @@ export default function Home() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Location boxes ───────────────────────────────────────────────── */}
+        {/* ── Location boxes ────────────────────────────────────────────── */}
         <LocationBox
           title="Twoja lokalizacja"
           latitude={userLatitude}
@@ -562,7 +649,7 @@ export default function Home() {
           theme={theme}
         />
 
-        {/* ── Logout ───────────────────────────────────────────────────────── */}
+        {/* ── Logout ───────────────────────────────────────────────────── */}
         <TouchableOpacity
           style={{ width: '100%', maxWidth: 420, backgroundColor: '#4b5563', padding: 14, borderRadius: 12, marginTop: 8, alignItems: 'center' }}
           onPress={handleLogout}
